@@ -1,0 +1,39 @@
+== for-each-ref ==
+refs/claims/t-a c9455f1f871e6467a87ef7c411aabfe135a93aa6
+refs/claims/t-b 236d4c58cf1317e5240baf9d68b694e597636c2e
+refs/claims/t-victim 7d84d950a26b68cea662a7b73e88e544235d871d
+refs/claims/t-victim@att-victim-4f6332 767e1be1d5daa73c99eaa321e51055f150d6e02a
+refs/tasks/t-a 2148afd76bc4b738f842ac7a72084e1f67e1b08a
+refs/tasks/t-b b7b4b18331032bd93ea3a3ba057746b375de65f8
+refs/tasks/t-victim c5256831762c51aa4d3713a0f52a17c1fff3cfa1
+== reflog refs/claims/t-victim ==
+== reflog refs/claims/t-a ==
+== reflog refs/claims/t-b ==
+== notes list ==
+31f99c750898c6531e616810aa3b3973319446c0 2148afd76bc4b738f842ac7a72084e1f67e1b08a
+9f36116f6f6294bdce1386406c6034fd3fb3a8c9 b7b4b18331032bd93ea3a3ba057746b375de65f8
+cf50c6364dd6adcfa491e45a07f9d25bfa33a273 c5256831762c51aa4d3713a0f52a17c1fff3cfa1
+== log refs/tasks/t-victim ==
+c5256831762c51aa4d3713a0f52a17c1fff3cfa1 fix t-victim
+
+Task: t-victim
+Attempt: att-heir-f1b792
+
+7352bc05d6cce561bfb4d8ad57854abff7a7316f base
+
+== log refs/tasks/t-a ==
+2148afd76bc4b738f842ac7a72084e1f67e1b08a fix t-a
+
+Task: t-a
+Attempt: att-clean-05a7e7
+
+7352bc05d6cce561bfb4d8ad57854abff7a7316f base
+
+== log refs/tasks/t-b ==
+b7b4b18331032bd93ea3a3ba057746b375de65f8 fix t-b
+
+Task: t-b
+Attempt: att-racer-5cf55f
+
+7352bc05d6cce561bfb4d8ad57854abff7a7316f base
+

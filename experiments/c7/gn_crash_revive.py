@@ -212,14 +212,11 @@ def reconstruct() -> dict:
     text = verdicts_text()
     returns = {}
     for task in TASKS:
-        r = git("log", "--format=%H%x00%B", f"refs/tasks/{task}",
-                check=False).stdout
-        for chunk in r.split("\x00"):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            sha, _, body = chunk.partition("\n")
-            returns.setdefault(task, []).append(sha)
+        shas = git("rev-list", f"refs/tasks/{task}",
+                   check=False).stdout.split()
+        returns[task] = shas
+        for sha in shas:
+            body = git("log", "-1", "--format=%B", sha).stdout
             for ln in body.splitlines():
                 if ln.startswith("Attempt: "):
                     attempts.setdefault(task, set()).add(
@@ -233,7 +230,8 @@ def reconstruct() -> dict:
 def main() -> None:
     t0 = time.perf_counter()
     src = open(os.path.join(HERE, "gn_crash_revive.py")).read()
-    no_b_machinery = ("fcntl" not in src
+    needle = "import " + "fcntl"
+    no_b_machinery = (needle not in src
                       and not [f for f in os.listdir(HERE)
                                if f.endswith(".jsonl")])
     df = subprocess.run(["df", "-h", "/"], capture_output=True,
