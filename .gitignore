@@ -13,3 +13,7 @@ experiments/c1/case-*/workspace/
 experiments/c2/case-*/workspace/
 experiments/c3/ws-*/
 experiments/c4/ws-*/
+
+# c6 fixture workspaces + queue (evidence = siblings: ledger, patches, results JSON)
+experiments/c6/ws-*/
+experiments/c6/queue/
