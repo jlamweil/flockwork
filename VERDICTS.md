@@ -284,3 +284,23 @@ sys.modules` measured the stdlib (subprocess imports fcntl), not the
 probe — dropped; the H2 `returns` parse was polluted by `git log`
 chunk boundaries — switched to `rev-list`. The counted run is the final
 clean re-run; every flag in it is asserted in `results_c7.json`.
+
+### Verification (01:50, same session)
+
+- **Freeze-before-run is git-provable:** freeze commit 1b7632e
+  (01:44:15+02:00) precedes EVERY c7 run — the two discarded
+  guard-iteration runs and the counted run (victim_killed_at
+  01:46:36+02:00) — which precedes the results commit 766ceb8
+  (01:47:09). The discarded runs were audit-guard plumbing failures
+  only (no protocol flag involved), disclosed in the run commit.
+- **Reproducibility:** the check re-run in a throwaway copy of the
+  script PASSed 2/2 with fresh attempt ids (att-victim-11d7b2 vs the
+  counted run's att-victim-4f6332); committed evidence verified
+  byte-identical after (sha256). The repro is a stability check, not
+  counted evidence.
+- **Claims re-read against artifacts:** §10's flags match
+  `results_c7.json` field-for-field (h1_pass, h2_pass,
+  exactly_one_final_verdict, dead_attempt_preserved,
+  attempts_countable_from_repo, race 1-accept, no orphans,
+  no_b_machinery); `refs_dump_c7.txt` shows the preserved
+  `@att-victim-4f6332` ref beside the heir's live claim.
