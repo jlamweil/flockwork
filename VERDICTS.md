@@ -139,3 +139,30 @@ both `ProviderModelNotFoundError` in-container (catalog is
 host-config-dependent; E9's "Insufficient balance" is the same family).
 Error-table consequence: model-death → REQUEUE + session exit; pin the
 full `provider/model` string per session-file.
+
+## 8. c5 (21:50): the chain closes on tonight's own data
+
+**Ladder consumes the new verdict stream** (`experiments/c5/calibrate_tonight.py`):
+all 15 ledger verdicts written tonight by the new leg, run through the
+production gate (Wilson LCB90, accept .70 / agree .75, MIN_N=5):
+
+| Lane | Record | LCB90 | Rung tonight |
+|------|--------|-------|--------------|
+| google/gemini-3.5-flash-lite (worker leg) | 12/13 | 0.7177 | **verified** |
+| glm-5.3-flash (bare id) | 0/1 | 0.0 | measured (n < MIN_N) |
+| github-copilot/glm-5.3-flash | 0/1 | 0.0 | measured (n < MIN_N) |
+
+The one failure in 13 is E10-d — an environmental death the retry
+semantics recovered from, still honestly counted. PROVEN needs the
+agree gate (≥.75); more nights of data, not same-night reruns, promote
+the lane. The two model-death lanes are held at `measured`: the ladder
+refuses to promote or refute on n=1 — exactly the conservatism E7
+claimed as load-bearing.
+
+**Lineage backfill** (`experiments/c5/backfill_spans.py`): all 15
+verdicts replayed as OTLP/JSON spans to the local collector — 30/30
+spans valid, 15 traces, every trace with the worker-dispatch →
+host-verify parent-child shape, attemptId/task/fixed/commit_sha as
+attributes. Pillar-3 is therefore an optional increment on Design B
+(one env-gated exporter), not a rebuild; receiver speaks both protobuf
+and JSON (`experiments/c2/otel_receiver.py`).

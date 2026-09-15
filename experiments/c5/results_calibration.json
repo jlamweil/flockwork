@@ -1,0 +1,55 @@
+{
+ "probe": "c5-calibrate",
+ "n_ledger_rows": 31,
+ "n_verdicts": 15,
+ "lanes": {
+  "github-copilot/glm-5.3-flash": {
+   "n": 1,
+   "successes": 0,
+   "tasks": [
+    "sumto:failed"
+   ],
+   "wilson_lcb90": 0.0,
+   "gate_rung": "measured",
+   "meets_min_n": false
+  },
+  "glm-5.3-flash": {
+   "n": 1,
+   "successes": 0,
+   "tasks": [
+    "sumto:failed"
+   ],
+   "wilson_lcb90": 0.0,
+   "gate_rung": "measured",
+   "meets_min_n": false
+  },
+  "google/gemini-3.5-flash-lite": {
+   "n": 13,
+   "successes": 12,
+   "tasks": [
+    "fizzbuzz:failed",
+    "fizzbuzz:fixed",
+    "fizzbuzz:fixed",
+    "sumto:fixed",
+    "initials:fixed",
+    "addtag:fixed",
+    "dates:fixed",
+    "addtag:fixed",
+    "sumto:fixed",
+    "dates:fixed",
+    "initials:fixed",
+    "fizzbuzz:fixed",
+    "sumto:fixed"
+   ],
+   "wilson_lcb90": 0.7177,
+   "gate_rung": "verified",
+   "meets_min_n": true
+  }
+ },
+ "headline": {
+  "worker_leg_lane": "google/gemini-3.5-flash-lite",
+  "record": "12/13",
+  "rung_tonight": "verified",
+  "note": "PROVEN requires LCB90 >= .75 (agree gate); a single failure in 13 keeps the lane at VERIFIED tonight \u2014 more nights of data promote it."
+ }
+}
