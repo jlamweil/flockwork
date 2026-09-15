@@ -1,0 +1,4 @@
+{"ts": "2026-09-15T21:28:58+0200", "event": "claim", "task": "sumto", "attemptId": "att-221d9292"}
+{"ts": "2026-09-15T21:29:00+0200", "event": "verdict", "task": "sumto", "attemptId": "att-221d9292", "model": "glm-5.3-flash", "image": "swarmo-worker:c1", "container_exit": 0, "wall_s": 1.8, "commit_sha": null, "trailer_ok": false, "patch_bytes": 0, "worktree_clean": true, "host_exit": 1, "host_passed": 1, "host_failed": 2, "fixed": false}
+{"ts": "2026-09-15T21:29:38+0200", "event": "claim", "task": "sumto", "attemptId": "att-b19ab84a"}
+{"ts": "2026-09-15T21:29:40+0200", "event": "verdict", "task": "sumto", "attemptId": "att-b19ab84a", "model": "github-copilot/glm-5.3-flash", "image": "swarmo-worker:c1", "container_exit": 0, "wall_s": 1.8, "commit_sha": null, "trailer_ok": false, "patch_bytes": 0, "worktree_clean": true, "host_exit": 1, "host_passed": 1, "host_failed": 2, "fixed": false}

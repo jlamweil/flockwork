@@ -1,0 +1,2 @@
+{"ts": "2026-09-15T21:32:07+0200", "event": "claim", "task": "sumto", "attemptId": "att-heir-34ad8a"}
+{"ts": "2026-09-15T21:32:16+0200", "event": "verdict", "task": "sumto", "attemptId": "att-heir-34ad8a", "model": "google/gemini-3.5-flash-lite", "image": "swarmo-worker:c1", "container_exit": 0, "wall_s": 9.7, "commit_sha": "a8b82df7f6770f64cbad52b9f755406a80e13240", "trailer_ok": true, "patch_bytes": 292, "worktree_clean": true, "host_exit": 0, "host_passed": 3, "host_failed": 0, "fixed": true}

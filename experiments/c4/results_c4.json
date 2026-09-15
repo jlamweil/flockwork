@@ -1,0 +1,48 @@
+{
+ "probe": "c4-crash-revive",
+ "task": "sumto",
+ "victim_killed_at": "2026-09-15T21:32:06+0200",
+ "victim_claim_no_verdict": true,
+ "sweep_requeued": [
+  "sumto.att-victim-5ce14a"
+ ],
+ "heir_fixed": true,
+ "final_verdicts_for_task": 1,
+ "exactly_one_final_verdict": true,
+ "heir_attempt_fresh": true,
+ "orphan_containers_left": [],
+ "victim_rows": [
+  {
+   "ts": "2026-09-15T21:32:06+0200",
+   "event": "claim",
+   "task": "sumto",
+   "attemptId": "att-victim-5ce14a"
+  }
+ ],
+ "heir_rows": [
+  {
+   "ts": "2026-09-15T21:32:07+0200",
+   "event": "claim",
+   "task": "sumto",
+   "attemptId": "att-heir-34ad8a"
+  },
+  {
+   "ts": "2026-09-15T21:32:16+0200",
+   "event": "verdict",
+   "task": "sumto",
+   "attemptId": "att-heir-34ad8a",
+   "model": "google/gemini-3.5-flash-lite",
+   "image": "swarmo-worker:c1",
+   "container_exit": 0,
+   "wall_s": 9.7,
+   "commit_sha": "a8b82df7f6770f64cbad52b9f755406a80e13240",
+   "trailer_ok": true,
+   "patch_bytes": 292,
+   "worktree_clean": true,
+   "host_exit": 0,
+   "host_passed": 3,
+   "host_failed": 0,
+   "fixed": true
+  }
+ ]
+}

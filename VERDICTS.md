@@ -116,3 +116,26 @@ carry `att-w<i>-*`.
 
 HQ wiring map: `HQ-INTEGRATION.md` (dispatch backend, error-table
 additions, container recipe checklist, cost profile).
+
+## 7. c4 result (21:50) + failure-class evidence: the leg survives crashes
+
+`experiments/c4/crash_revive.py` — victim worker SIGKILLed mid-dispatch
+(container running), then a revive sweep + heir worker:
+
+- **victim_claim_no_verdict: true** — the crash left exactly the E2
+  shape: claim row without verdict, no false credit.
+- **sweep_requeued: [sumto.att-victim-5ce14a]** — the sweep reconciled
+  by probe: killed the orphan container BY NAME (names embed
+  task+attemptId — this is why), requeued the folder. Zero containers
+  leaked (E10 postscript's leak is now handled).
+- **heir_fixed: true ∧ exactly_one_final_verdict: true** — fresh
+  `att-heir-*` completed the task; final state = one verdict, fixed.
+
+Failure-class probes (`experiments/c3/probe_billing_death.py`,
+`results_billing_probe_ledger.jsonl`): model-death through the leg dies
+fast (1.8 s), leaves no patch, `fixed=false`, ledger clean. Two
+sub-instances recorded: bare `glm-5.3-flash` and provider-prefixed —
+both `ProviderModelNotFoundError` in-container (catalog is
+host-config-dependent; E9's "Insufficient balance" is the same family).
+Error-table consequence: model-death → REQUEUE + session exit; pin the
+full `provider/model` string per session-file.

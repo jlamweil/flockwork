@@ -1,0 +1,13 @@
+Performing one time database migration, may take a few minutes...
+sqlite-migration:done
+Database migration complete.
+ProviderModelNotFoundError: ProviderModelNotFoundError
+ data: {
+  providerID: "github-copilot",
+  modelID: "glm-5.3-flash",
+  suggestions: [],
+},
+
+      at getModel (/$bunfs/root/src/index.js:226001:15)
+
+[91m[1mError: [0mModel not found: github-copilot/glm-5.3-flash.

@@ -1,0 +1,11 @@
+{
+ "task": "sumto",
+ "attemptId": "att-b19ab84a",
+ "container_exit": 0,
+ "wall_s": 1.8,
+ "commit_sha": null,
+ "patch_bytes": 0,
+ "host_passed": 1,
+ "host_failed": 2,
+ "fixed": false
+}

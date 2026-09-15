@@ -1,0 +1,12 @@
+diff --git a/sumto.py b/sumto.py
+index 7d76f6a..1f7a323 100644
+--- a/sumto.py
++++ b/sumto.py
+@@ -1,6 +1,6 @@
+ def sum_to(n: int) -> int:
+     """Sum the integers 1..n inclusive."""
+     total = 0
+-    for i in range(1, n):
++    for i in range(1, n + 1):
+         total += i
+     return total

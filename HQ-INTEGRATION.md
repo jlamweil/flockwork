@@ -26,10 +26,13 @@ spawn step; it replaces no coordination code.
 
 ## Error-table additions (classify → decide, no new machinery)
 
+All rows below have live instances from example-host-b night (VERDICTS.md §7):
+
 | Observed class | Tonight's instance | Decide |
 |---|---|---|
+| worker killed mid-dispatch | c4: SIGKILL left claim w/o verdict; sweep killed orphan container by name, requeued; heir completed (1 final verdict, 0 leaked containers) | existing revive path (A.10), verified |
 | dispatch timeout (wall-cap) | any case > 240s: kill CONTAINER, not just the client (killed clients leak running containers) | REQUEUE, fresh att-* |
-| billing/model death | E9: glm-5.3-flash died 2.0s "Insufficient balance" | REQUEUE + session exit (existing quota rule A.7) |
+| model death: billing OR catalog | E9 billing ("Insufficient balance", 2.0s); c3 probe: ProviderModelNotFoundError, 1.8s, both clean no-credit | REQUEUE + session exit (A.7); pin full provider/model string per session-file |
 | EACCES in container | E10-b, E10-d (root-owned mountpoints) | QUARANTINE image/mount recipe — environmental, not task-fatal |
 | external_directory auto-reject | E10-c (/secrets probe) | QUARANTINE recipe: never stage auth under a path a model may probe |
 | empty /work at start | E10-a (fixtures beside the mount) | RECIPE bug, not runtime: fixtures inside workspace/ BEFORE mount |
