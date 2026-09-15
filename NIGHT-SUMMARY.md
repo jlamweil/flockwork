@@ -93,3 +93,22 @@ search — nothing above was changed:
   disk 79% / 96G free at audit (never filled); freeze commit (19:27)
   precedes probe commit (21:21) in history, so freeze-before-verify is
   git-provable.
+
+## Addendum — next night 2026-09-16 (~01:50): round settled
+
+- Worker lane stands at **PROVEN** (20/21, LCB90 .8122 — c6 batch
+  committed as 913d87a). No reruns: same-night reruns add no independent
+  evidence.
+- Design-search round settled (VERDICTS §10, frozen in
+  `experiments/c7/FREEZE-C7.md` before the run): shortlist B > C, A dead
+  on its recorded kill reason (H-A3). The B-vs-C head-to-head's open
+  link — C's crash/attempt semantics in refs — is now **closed**: the
+  cheapest separating check (docker-free, model-free, 0.6 s) replayed
+  c4's crash/revive on a git-native substrate and reproduced it exactly
+  (H1 ∧ H2 PASS). C is a credible crash-safe fallback, not just a
+  probe-survivor; B remains the winner.
+- Operational takeaway for harvest: unchanged — wire `tools/worker_loop.py`
+  per `HQ-INTEGRATION.md`. The remaining real B-vs-C discriminator is
+  multi-host coordination (file+flock needs a shared kernel; ref-CAS
+  works over git transport) — only testable on a real two-host setup;
+  not exercised here by construction.

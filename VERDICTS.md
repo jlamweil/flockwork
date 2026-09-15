@@ -203,3 +203,84 @@ one heir attempt max; merit failure final); ladder recompute through
 
 Tests still 24/24 (`pytest tools/test_calibration.py
 tools/test_worker_loop.py`).
+
+## 10. Round settlement (01:30–01:50, 2026-09-16): the search adjudicates again
+
+Night goal executed against the on-disk record. **Survey finding:** the
+design search's verdicts WERE on disk and complete at survey time
+(§§1–9; no newer search process or output anywhere on disk), so the
+goal's fallback clause ("execute the survey's own cheapest pending
+discriminating check instead") did **not** trigger — the primary path
+was used: adjudicate → preregister → execute. Protocol frozen in
+`experiments/c7/FREEZE-C7.md` (commit 1b7632e) BEFORE any run.
+
+### (a) Ranked shortlist with each rival's discriminating-check outcome
+
+| Rank | Design | Outcome |
+|------|--------|---------|
+| 1 | **B ledger-claim minimal** | All gates PASS (H-B1✓B2✓B3✓, B4 pre-met) + hardening chain c3/c4/c5/c6; worker lane PROVEN (20/21, LCB90 .8122). |
+| 2 | **C git-native** | All gates PASS (H-C1✓C2✓C3✓C4✓); runner-up on frozen criteria. One link explicitly unproven entering tonight: E2 retry/duplicate semantics in ref names (DESIGNS §2) — resolved below. |
+| dead | **A D0-as-written** | **Kill reason: H-A3 FAIL** (p95 1056 ms vs <500 ms frozen, 60-proc burst). Recorded with its kill reason, not deleted; the post-hoc backlog repair (178 ms) does not reopen a frozen verdict. |
+
+### (b) Head-to-head B vs C (preregistered before the run)
+
+Only open dimension between the top two: crash/attempt semantics of the
+claim layer — B's side proven (c4, carried by citation), C's side the
+unproven link. Frozen hypotheses with falsification conditions
+(FREEZE-C7 §2): **H1** — a git-native protocol (ref-CAS claims,
+`refs/claims/<task>@att-*` attempt refs, `Attempt:` trailers,
+`refs/notes/verdicts`) reproduces c4's crash outcome using ONLY git
+primitives: after mid-dispatch SIGKILL + sweep + heir, exactly one final
+verdict per task, dead attempt preserved and countable; falsified by
+(a) ≠1 final verdict, (b) heir needing lock/ledger machinery, (c) lost
+dead attempt, (d) sweep requeue ambiguity. **H2** — the repo alone
+reconstructs {task → attempts → verdicts} exactly; falsified by any
+omission/invention. Mechanical decision rule frozen: both PASS →
+`crash-semantics-closed`; H1 FAIL → C records its first failure class,
+fallback downgraded. The check was the **cheapest separating** one:
+multi-host claims (the other candidate) is infeasible on this one-kernel
+host — flock would hold across fake container-"hosts", so it has no
+separating power here and remains the standing discriminator for a
+two-host opportunity; speed and contention have no separating power left
+(both designs measured/proven fast and exact).
+
+### (c) Executed: H1 ∧ H2 PASS — outcome `crash-semantics-closed`
+
+`experiments/c7/gn_crash_revive.py` replayed c4 docker-free on a scratch
+repo (0.6 s wall, no model, no container; B-machinery guard: no flock,
+no ledger file):
+
+- **victim_claim_no_verdict: true** — SIGKILL mid-dispatch left the
+  c4/E2 shape: live claim ref, no return commit, no verdict note.
+- **sweep_requeued: [t-victim.att-victim-4f6332]** — orphan killed by
+  tag (names embed task+attempt — same reason c4 killed containers by
+  name); dead attempt preserved in `refs/claims/t-victim@att-victim-4f6332`
+  (never deleted silently); live claim CAS-deleted; second sweep run
+  requeued nothing (idempotent).
+- **heir_fixed: true ∧ exactly_one_final_verdict: true** — heir claimed
+  fresh via CAS-create on the deleted ref and returned exactly one final
+  verdict note; verdicts_per_task = 1/1/1.
+- **attempts_countable_from_repo: true (H2 exact)** — for-each-ref +
+  notes + trailers alone reconstructed {t-victim: [att-heir, att-victim],
+  1 verdict; t-a/t-b: 1, 1}, matching ground truth exactly. Notably the
+  repo needs no reflogs: attempt refs + trailers carry the lineage
+  (git does not reflog custom refs by default here — the design doesn't
+  need them).
+- Watched, not gates: 2-proc claim race → exactly 1 accept / 1 clean
+  reject; zero orphaned processes after sweep.
+
+**Consequences (by the frozen rule):** C's fallback credibility upgrades
+from "survived single-host probes" to "crash/attempt semantics closed";
+B remains winner tonight (frozen ranking criteria are production-
+evidence-based and no same-night probe can move them — stated in the
+freeze, §1, so this is not post-hoc). The B-vs-C question now lives
+only in the batcher re-plumb cost and the two-host wall. A stays dead
+on its recorded kill reason.
+
+**Probe repairs (reality vs frozen sketch — none change a threshold):**
+the `no_b_machinery` guard self-matched its own source twice (literal
+"fcntl" in the check line), and the runtime leg `"fcntl" not in
+sys.modules` measured the stdlib (subprocess imports fcntl), not the
+probe — dropped; the H2 `returns` parse was polluted by `git log`
+chunk boundaries — switched to `rev-list`. The counted run is the final
+clean re-run; every flag in it is asserted in `results_c7.json`.
