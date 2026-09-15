@@ -1,0 +1,5 @@
+{"ts":"2026-09-15T18:44:39+02:00","case":"fizzbuzz","model":"google/gemini-3.5-flash-lite","image":"swarmo-worker:c1","container_exit":124,"wall_s":429,0,"host_passed":0,"host_failed":0,"fixed":false}
+{"ts":"2026-09-15T18:46:07+02:00","case":"sumto","model":"google/gemini-3.5-flash-lite","image":"swarmo-worker:c1","container_exit":0,"wall_s":87,0,"host_passed":0,"host_failed":0,"fixed":false}
+{"ts":"2026-09-15T18:49:25+02:00","case":"initials","model":"google/gemini-3.5-flash-lite","image":"swarmo-worker:c1","container_exit":0,"wall_s":197,0,"host_passed":0,"host_failed":0,"fixed":false}
+{"ts":"2026-09-15T18:49:46+02:00","case":"addtag","model":"google/gemini-3.5-flash-lite","image":"swarmo-worker:c1","container_exit":0,"wall_s":21,0,"host_passed":0,"host_failed":0,"fixed":false}
+{"ts":"2026-09-15T18:53:52+02:00","case":"dates","model":"google/gemini-3.5-flash-lite","image":"swarmo-worker:c1","container_exit":124,"wall_s":246,0,"host_passed":0,"host_failed":0,"fixed":false}

@@ -1,0 +1,21 @@
+# Patch harvested from commit b3db7825d25bf6bd18ef3ceb2b6a5a358290d4d2
+# (attempt att-fd19a1c2, case fizzbuzz; container_exit=0, wall 12.5s,
+# host pytest 4/4 after patch, worktree_clean=true). Workspace was
+# rebuilt by the next driver run before this diff could be committed;
+# content preserved verbatim here by the operator process.
+diff --git a/fizzbuzz.py b/fizzbuzz.py
+index c7c46e0..3b7c7e0 100644
+--- a/fizzbuzz.py
++++ b/fizzbuzz.py
+@@ -1,9 +1,9 @@
+ def classify(n: int) -> str:
+     """Return FizzBuzz classification for a single integer."""
++    if n % 15 == 0:
++        return "FizzBuzz"
+     if n % 3 == 0:
+         return "Fizz"
+     if n % 5 == 0:
+         return "Buzz"
+-    if n % 15 == 0:
+-        return "FizzBuzz"
+     return str(n)

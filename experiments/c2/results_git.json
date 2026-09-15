@@ -1,0 +1,96 @@
+{
+ "probe": "C-git",
+ "hypotheses": [
+  "H-C1",
+  "H-C3",
+  "H-C4"
+ ],
+ "h_c1": {
+  "trials": [
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at d4ae50f17e0197d02cd8d9979d490bf02946de26 but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at 999339c8190c49a2ab793becefa2d9603b26d6c7 but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at 999339c8190c49a2ab793becefa2d9603b26d6c7 but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at 8b315cbabf5bfcc26e74979283cc444c87d9185c but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at 98898054463d30ec748c7e71cb9f7e6f099cb75e but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at 8b315cbabf5bfcc26e74979283cc444c87d9185c but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at d4ae50f17e0197d02cd8d9979d490bf02946de26 but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at 8b315cbabf5bfcc26e74979283cc444c87d9185c but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at d4ae50f17e0197d02cd8d9979d490bf02946de26 but expected 2324ae82c"
+   },
+   {
+    "accepts": 1,
+    "rejects": 31,
+    "final_matches_winner": true,
+    "sample_err": "fatal: prepare: cannot lock ref 'refs/claims/t-1': is at 575dcddeb671626fce235a586ce09c66402f6d33 but expected 2324ae82c"
+   }
+  ],
+  "pass": true
+ },
+ "h_c3": {
+  "import_s": 1.0,
+  "grep_s": 0.24,
+  "commits_matched": 500,
+  "expected_matches": 500,
+  "repo_size": [
+   "size-pack: 8.69 MiB"
+  ],
+  "pass": true
+ },
+ "h_c4": {
+  "n_refs": 10000,
+  "n_notes_read": 200,
+  "n_notes_ok": 200,
+  "create_10k_refs_s": 0.59,
+  "create_200_notes_s": 0.7,
+  "foreachref_full_list_s": 0.071,
+  "notes_read_s": 0.015,
+  "combined_reads_s": 0.087,
+  "pass": true
+ },
+ "verdict": "PASS",
+ "ts": "2026-09-15T20:57:15+0200"
+}

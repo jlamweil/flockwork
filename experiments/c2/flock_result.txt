@@ -1,0 +1,97 @@
+{
+ "a_holder contender_rounds": [
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  },
+  {
+   "blocked_while_held": "LOCKED",
+   "won_after_release": "WON"
+  }
+ ],
+ "b_32way_races": [
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  },
+  {
+   "winners": 0,
+   "locked_errors": 32,
+   "other": 0
+  }
+ ]
+}
+H-B1 verdict: FAIL (a_all_10_ok=True, b_all_10_ok=False)

@@ -1,0 +1,8 @@
+EACCES: permission denied, mkdir '/home/worker/.local/state'
+    path: "/home/worker/.local/state",
+ syscall: "mkdir",
+   errno: -13,
+    code: "EACCES"
+
+
+Bun v1.3.11 (Linux x64 baseline)

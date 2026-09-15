@@ -1,0 +1,10 @@
+diff --git a/dates.py b/dates.py
+index 2419349..fbcfffe 100644
+--- a/dates.py
++++ b/dates.py
+@@ -2,4 +2,4 @@ import re
+ 
+ def is_iso_date(s: str) -> bool:
+     """True if s looks like YYYY-MM-DD."""
+-    return bool(re.fullmatch(r"\d{2}-\d{2}-\d{2}", s))
++    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))

@@ -1,0 +1,73 @@
+Performing one time database migration, may take a few minutes...
+sqlite-migration:done
+Database migration complete.
+[0m
+> build · gemini-3.5-flash-lite
+[0m
+[0m✱ [0mGlob "**/*tags*"[90m in . · 2 matches[0m
+[0m→ [0mRead tags.py
+[0m→ [0mRead test_tags.py
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 2 items
+
+test_tags.py .F                                                          [100%]
+
+=================================== FAILURES ===================================
+____________________________ test_second_call_fresh ____________________________
+
+    def test_second_call_fresh():
+>       assert add_tag("b") == ["b"]
+E       AssertionError: assert ['a', 'b'] == ['b']
+E         
+E         At index 0 diff: 'a' != 'b'
+E         Left contains one more item: 'b'
+E         Use -v to get more diff
+
+test_tags.py:7: AssertionError
+=========================== short test summary info ============================
+FAILED test_tags.py::test_second_call_fresh - AssertionError: assert ['a', 'b...
+========================= 1 failed, 1 passed in 0.02s ==========================
+[0m
+[0m← [0mEdit tags.py
+Index: /work/tags.py
+===================================================================
+--- /work/tags.py
++++ /work/tags.py
+@@ -1,4 +1,6 @@
+-def add_tag(tag: str, bucket=[]) -> list:
++def add_tag(tag: str, bucket=None) -> list:
+     """Append tag to bucket, defaulting to a fresh list."""
++    if bucket is None:
++        bucket = []
+     bucket.append(tag)
+     return bucket
+
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 2 items
+
+test_tags.py ..                                                          [100%]
+
+============================== 2 passed in 0.00s ===============================
+[0m
+[0m$ [0mgit diff
+diff --git a/tags.py b/tags.py
+index 45cdef1..295a045 100644
+--- a/tags.py
++++ b/tags.py
+@@ -1,4 +1,6 @@
+-def add_tag(tag: str, bucket=[]) -> list:
++def add_tag(tag: str, bucket=None) -> list:
+     """Append tag to bucket, defaulting to a fresh list."""
++    if bucket is None:
++        bucket = []
+     bucket.append(tag)
+     return bucket
+[0m

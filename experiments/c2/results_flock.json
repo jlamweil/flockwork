@@ -1,0 +1,132 @@
+{
+ "probe": "C-flock",
+ "hypothesis": "H-B1",
+ "part_a_2proc": [
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  },
+  {
+   "held": true,
+   "contender": "BLOCKED",
+   "released": true,
+   "verifier": "WIN"
+  }
+ ],
+ "part_b_32proc": [
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  },
+  {
+   "wins": 1,
+   "blocked": 31,
+   "other": 0,
+   "verifier": "WIN"
+  }
+ ],
+ "a_pass": true,
+ "b_pass": true,
+ "verdict": "PASS",
+ "ts": "2026-09-15T20:42:39+0200"
+}

@@ -1,0 +1,2 @@
+Fixed `sum_to` in `sumto.py` to correctly include `n` in the range (`range(1, n + 1)`). All tests pass successfully.
+COMMIT_SHA 6f6e06203d13bbf04af784acf5a024838ddc4a10

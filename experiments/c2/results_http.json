@@ -1,0 +1,15 @@
+{
+ "probe": "C-http",
+ "hypothesis": "H-A3",
+ "label": "frozen",
+ "backlog": 5,
+ "n_expected": 300,
+ "n_received": 300,
+ "n_200": 300,
+ "n_non200": 0,
+ "non200_detail": [],
+ "p50_ms": 8.2,
+ "p95_ms": 1055.7,
+ "verdict": "FAIL",
+ "ts": "2026-09-15T20:47:47+0200"
+}

@@ -1,0 +1,76 @@
+Performing one time database migration, may take a few minutes...
+sqlite-migration:done
+Database migration complete.
+[0m
+> build · gemini-3.5-flash-lite
+[0m
+[0m✱ [0mGlob "*"[90m 39 matches[0m
+[0m→ [0mRead dates.py
+[0m→ [0mRead test_dates.py
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 3 items
+
+test_dates.py FF.                                                        [100%]
+
+=================================== FAILURES ===================================
+________________________________ test_full_year ________________________________
+
+    def test_full_year():
+>       assert is_iso_date("2026-09-15") is True
+E       AssertionError: assert False is True
+E        +  where False = is_iso_date('2026-09-15')
+
+test_dates.py:4: AssertionError
+___________________________ test_short_year_rejected ___________________________
+
+    def test_short_year_rejected():
+>       assert is_iso_date("26-09-15") is False
+E       AssertionError: assert True is False
+E        +  where True = is_iso_date('26-09-15')
+
+test_dates.py:7: AssertionError
+=========================== short test summary info ============================
+FAILED test_dates.py::test_full_year - AssertionError: assert False is True
+FAILED test_dates.py::test_short_year_rejected - AssertionError: assert True ...
+========================= 2 failed, 1 passed in 0.02s ==========================
+[0m
+[0m← [0mEdit dates.py
+Index: /work/dates.py
+===================================================================
+--- /work/dates.py
++++ /work/dates.py
+@@ -1,5 +1,5 @@
+ import re
+ 
+ def is_iso_date(s: str) -> bool:
+     """True if s looks like YYYY-MM-DD."""
+-    return bool(re.fullmatch(r"\d{2}-\d{2}-\d{2}", s))
++    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
+
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 3 items
+
+test_dates.py ...                                                        [100%]
+
+============================== 3 passed in 0.01s ===============================
+[0m
+[0m$ [0mgit diff
+diff --git a/dates.py b/dates.py
+index 2419349..fbcfffe 100644
+--- a/dates.py
++++ b/dates.py
+@@ -2,4 +2,4 @@ import re
+ 
+ def is_iso_date(s: str) -> bool:
+     """True if s looks like YYYY-MM-DD."""
+-    return bool(re.fullmatch(r"\d{2}-\d{2}-\d{2}", s))
++    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s))
+[0m

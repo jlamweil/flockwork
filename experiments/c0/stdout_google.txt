@@ -1,0 +1,1 @@
+I have fixed the bug in `fizzbuzz.py` by checking for divisibility by 15 before checking divisibility by 3 and 5. All tests now pass successfully.

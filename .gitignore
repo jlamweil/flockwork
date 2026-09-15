@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+# nested fixture/evidence git repos must not become gitlinks
+**/.git/
+# heavy, regenerable probe artifacts (results JSONs stay tracked)
+otel-venv/
+gitdata/
+# fixture workspaces contain nested repos; evidence is their siblings:
+# patch.diff / stdout / stderr / ledger rows / BUGS in c2_driver.py
+experiments/c0/workspace/
+experiments/c1/workspace/
+experiments/c1/case-*/workspace/
+experiments/c2/case-*/workspace/

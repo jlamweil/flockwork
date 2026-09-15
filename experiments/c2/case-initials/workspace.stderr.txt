@@ -1,0 +1,85 @@
+Performing one time database migration, may take a few minutes...
+sqlite-migration:done
+Database migration complete.
+[0m
+> build · gemini-3.5-flash-lite
+[0m
+[0m✱ [0mGlob "*"[90m 39 matches[0m
+[0m→ [0mRead initials.py
+[0m→ [0mRead test_initials.py
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 2 items
+
+test_initials.py FF                                                      [100%]
+
+=================================== FAILURES ===================================
+___________________________________ test_ada ___________________________________
+
+    def test_ada():
+>       assert initials("ada lovelace") == "A.L."
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+test_initials.py:4: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+full_name = 'ada lovelace'
+
+    def initials(full_name: str) -> str:
+        """First letters of the first two words, uppercase, dot-separated."""
+        parts = full_name.strip().split()
+>       return (parts[0][0] + "." + part[1][0] + ".").upper()
+                                    ^^^^
+E       NameError: name 'part' is not defined
+
+initials.py:4: NameError
+__________________________________ test_grace __________________________________
+
+    def test_grace():
+>       assert initials("grace hopper") == "G.H."
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+test_initials.py:7: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+full_name = 'grace hopper'
+
+    def initials(full_name: str) -> str:
+        """First letters of the first two words, uppercase, dot-separated."""
+        parts = full_name.strip().split()
+>       return (parts[0][0] + "." + part[1][0] + ".").upper()
+                                    ^^^^
+E       NameError: name 'part' is not defined
+
+initials.py:4: NameError
+=========================== short test summary info ============================
+FAILED test_initials.py::test_ada - NameError: name 'part' is not defined
+FAILED test_initials.py::test_grace - NameError: name 'part' is not defined
+============================== 2 failed in 0.02s ===============================
+[0m
+[0m← [0mEdit initials.py
+Index: /work/initials.py
+===================================================================
+--- /work/initials.py
++++ /work/initials.py
+@@ -1,4 +1,4 @@
+ def initials(full_name: str) -> str:
+     """First letters of the first two words, uppercase, dot-separated."""
+     parts = full_name.strip().split()
+-    return (parts[0][0] + "." + part[1][0] + ".").upper()
++    return (parts[0][0] + "." + parts[1][0] + ".").upper()
+
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 2 items
+
+test_initials.py ..                                                      [100%]
+
+============================== 2 passed in 0.01s ===============================
+[0m

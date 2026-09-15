@@ -1,0 +1,12 @@
+diff --git a/tags.py b/tags.py
+index 45cdef1..295a045 100644
+--- a/tags.py
++++ b/tags.py
+@@ -1,4 +1,6 @@
+-def add_tag(tag: str, bucket=[]) -> list:
++def add_tag(tag: str, bucket=None) -> list:
+     """Append tag to bucket, defaulting to a fresh list."""
++    if bucket is None:
++        bucket = []
+     bucket.append(tag)
+     return bucket

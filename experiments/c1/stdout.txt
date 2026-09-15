@@ -1,0 +1,1 @@
+I have fixed the bug in `fizzbuzz.py` by checking for multiples of 15 before checking for multiples of 3 and 5. All tests in `test_fizzbuzz.py` now pass successfully.
