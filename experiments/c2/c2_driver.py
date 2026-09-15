@@ -108,11 +108,18 @@ BUGS = {
 GITIGNORE = ".pytest_cache/\n__pycache__/\n"
 
 
-def make_fixture(name: str) -> str:
-    """(a)+(b): workspace pre-built on host, owned by uid 1004, git-inited."""
-    ws = os.path.join(HERE, f"case-{name}", "workspace")
-    subprocess.run(["rm", "-rf", os.path.join(HERE, f"case-{name}")],
-                   check=True)
+def make_fixture(name: str, ws: str | None = None) -> str:
+    """(a)+(b): workspace pre-built on host, owned by uid 1004, git-inited.
+
+    ws: explicit workspace path (c3 per-attempt dirs); default keeps the
+    c2 layout case-<name>/workspace.
+    """
+    case_dir = os.path.join(HERE, f"case-{name}")
+    if ws is None:
+        ws = os.path.join(case_dir, "workspace")
+        subprocess.run(["rm", "-rf", case_dir], check=True)
+    else:
+        subprocess.run(["rm", "-rf", ws], check=True)
     os.makedirs(ws)  # uid 1004, before docker ever sees it
     target, bug_src, tests = BUGS[name]
     with open(os.path.join(ws, target), "w") as f:

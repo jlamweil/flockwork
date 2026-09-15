@@ -1,0 +1,2 @@
+Fixed the mutable default argument bug in `tags.py` by using `None` as the default value for `bucket` and initializing a new list when `bucket is None`. All tests now pass.
+COMMIT_SHA ef61467d7d827585450c7eac1e61c773da5583c9

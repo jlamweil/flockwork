@@ -1,0 +1,81 @@
+{
+ "n_workers": 3,
+ "tasks": [
+  "fizzbuzz",
+  "sumto",
+  "initials",
+  "addtag",
+  "dates"
+ ],
+ "claims_per_task": {
+  "dates": 1,
+  "initials": 1,
+  "fizzbuzz": 1,
+  "addtag": 1,
+  "sumto": 1
+ },
+ "exactly_once": true,
+ "all_fixed": true,
+ "every_claim_has_verdict": true,
+ "workers_used": [
+  "w0",
+  "w1",
+  "w2"
+ ],
+ "claimed_dirs": [
+  "addtag.att-w2-c3d501",
+  "dates.att-w0-903a2b",
+  "fizzbuzz.att-w1-2099b3",
+  "initials.att-w0-fc07dc",
+  "sumto.att-w2-c4f9bd"
+ ],
+ "verdict_rows": [
+  {
+   "task": "dates",
+   "attemptId": "att-w0-903a2b",
+   "wall_s": 75.6,
+   "fixed": true,
+   "container_exit": 0,
+   "trailer_ok": true,
+   "host_passed": 3
+  },
+  {
+   "task": "initials",
+   "attemptId": "att-w0-fc07dc",
+   "wall_s": 12.6,
+   "fixed": true,
+   "container_exit": 0,
+   "trailer_ok": true,
+   "host_passed": 2
+  },
+  {
+   "task": "fizzbuzz",
+   "attemptId": "att-w1-2099b3",
+   "wall_s": 79.8,
+   "fixed": true,
+   "container_exit": 0,
+   "trailer_ok": true,
+   "host_passed": 4
+  },
+  {
+   "task": "addtag",
+   "attemptId": "att-w2-c3d501",
+   "wall_s": 79.2,
+   "fixed": true,
+   "container_exit": 0,
+   "trailer_ok": true,
+   "host_passed": 2
+  },
+  {
+   "task": "sumto",
+   "attemptId": "att-w2-c4f9bd",
+   "wall_s": 75.1,
+   "fixed": true,
+   "container_exit": 0,
+   "trailer_ok": true,
+   "host_passed": 3
+  }
+ ],
+ "wall_s": 155.4,
+ "worker_output_lines": 5
+}

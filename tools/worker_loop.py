@@ -192,11 +192,17 @@ def run_case(
     opencode_bin: str,
     auth_json: str,
     timeout_s: int = 240,
+    attempt_id: str | None = None,
 ) -> dict:
-    """One full claim->dispatch->harvest->verify->ledger cycle."""
+    """One full claim->dispatch->harvest->verify->ledger cycle.
+
+    attempt_id: pass one when the claim already happened upstream (c3
+    queue) so ledger rows join to the upstream claim; mints one otherwise.
+    """
     claim = Claim(ledger_path)  # raises AlreadyClaimed if singleton held
     try:
-        attempt_id = "att-" + uuid.uuid4().hex[:8]
+        if attempt_id is None:
+            attempt_id = "att-" + uuid.uuid4().hex[:8]
         append_row(ledger_path, {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "event": "claim", "task": task, "attemptId": attempt_id,

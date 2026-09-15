@@ -1,0 +1,2 @@
+I have fixed the bug in `initials.py`, and `python3 -m pytest` now passes successfully.
+COMMIT_SHA b3249606ba22bdd68a891630c5a57a59a914a6ce

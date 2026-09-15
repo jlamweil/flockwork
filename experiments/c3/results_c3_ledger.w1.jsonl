@@ -1,0 +1,2 @@
+{"ts": "2026-09-15T21:24:45+0200", "event": "claim", "task": "fizzbuzz", "attemptId": "att-w1-2099b3"}
+{"ts": "2026-09-15T21:26:05+0200", "event": "verdict", "task": "fizzbuzz", "attemptId": "att-w1-2099b3", "model": "google/gemini-3.5-flash-lite", "image": "swarmo-worker:c1", "container_exit": 0, "wall_s": 79.8, "commit_sha": "ae9953f21c79353c8411957b2f2c5b00e48b6725", "trailer_ok": true, "patch_bytes": 416, "worktree_clean": true, "host_exit": 0, "host_passed": 4, "host_failed": 0, "fixed": true}

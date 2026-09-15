@@ -98,3 +98,21 @@ demonstration beyond the single canary — N parallel loop instances
 contending on a shared task queue, claiming exactly-once and returning
 verified patches — then the HQ-side integration note for the morning
 harvest.
+
+## 6. c3 result (21:30): the winner's loop under real contention
+
+`experiments/c3/parallel_demo.py`: N=3 worker processes contend over the
+5 c2 tasks via rename(2) claims on a shared pending/ queue (atomic;
+losers get FileNotFoundError — the folder analogue of H-C1's ref-CAS).
+Production topology preserved: per-child ledgers (SURVEY A.4), claims
+carry `att-w<i>-*`.
+
+- **exactly_once: true** — 5/5 tasks claimed once (w0×2, w1×1, w2×2).
+- **all_fixed: true** — every task returned a verified patch; host
+  tests pass on all 5.
+- **every_claim_has_verdict: true** — 10/10 ledger rows joined.
+- Wall: 155.4 s for the whole swarm run.
+- Artifacts: `results_c3.json`, per-worker ledgers `results_c3_ledger.w*.jsonl`.
+
+HQ wiring map: `HQ-INTEGRATION.md` (dispatch backend, error-table
+additions, container recipe checklist, cost profile).
