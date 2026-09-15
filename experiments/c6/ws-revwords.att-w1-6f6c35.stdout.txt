@@ -1,0 +1,2 @@
+I have fixed the bug in `revwords.py` and all tests now pass successfully.
+COMMIT_SHA b382307015140496b7149de1e53464a87516465d

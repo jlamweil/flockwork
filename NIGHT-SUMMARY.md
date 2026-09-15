@@ -4,9 +4,12 @@
 minimal) wins; its one missing piece — the docker worker leg — was
 repaired, closed at 12/13 fixes, proven under 3-way parallelism and
 mid-dispatch crash, and verified by the production ladder at rung
-VERIFIED. Design C survived all probes (documented fallback). Design A
-eliminated on its own pre-registered burst test. Everything is in this
-repo; `git log` is the audit trail.**
+VERIFIED. A pre-registered fresh-task batch (c6, 01:15) then pushed the
+worker lane to 20/21, LCB90 .8122 → rung PROVEN (agree gate .75 met
+with independent first-execution evidence). Design C survived all
+probes (documented fallback). Design A eliminated on its own
+pre-registered burst test. Everything is in this repo; `git log` is the
+audit trail.**
 
 ## What was frozen vs what was run
 
@@ -35,6 +38,12 @@ repo; `git log` is the audit trail.**
   (each an independent execution), not distinct tasks — fizzbuzz
   appears 3× (one environmental death, two fixes, including the c4
   retry path).
+- c6 (01:15, next session): **8 fresh tasks (never run earlier that
+  night), protocol frozen before the run** (`experiments/c6/FREEZE.md`)
+  → 8/8 fixed in 172.7 s → worker lane **20/21, LCB90 .8122 → PROVEN**
+  (agree gate .75 met). Spans backfilled (16/16). One disclosed agent
+  fault: a mis-started pre-freeze partial run was killed and discarded
+  wholesale, unexamined; disclosure lives in the frozen FREEZE.md.
 
 ## Mechanical knowledge worth its weight (E10, expanded)
 

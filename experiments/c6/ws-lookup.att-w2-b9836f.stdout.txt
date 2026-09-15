@@ -1,0 +1,2 @@
+I have fixed the bug in `lookup.py` by using `d.get(key, default)`, and all tests now pass successfully.
+COMMIT_SHA a04de3ba2ff6c34b7b40ddcac1cc934dd96b4d16

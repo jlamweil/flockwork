@@ -1,0 +1,93 @@
+Performing one time database migration, may take a few minutes...
+sqlite-migration:done
+Database migration complete.
+[0m
+> build · gemini-3.5-flash-lite
+[0m
+[0m✱ [0mGlob "**/*"[90m 39 matches[0m
+[0m→ [0mRead lookup.py[90m [limit=2000, offset=1][0m
+[0m→ [0mRead test_lookup.py[90m [offset=1, limit=2000][0m
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 3 items
+
+test_lookup.py .FF                                                       [100%]
+
+=================================== FAILURES ===================================
+_________________________________ test_default _________________________________
+
+    def test_default():
+>       assert lookup({"a": 1}, "b", 0) == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+test_lookup.py:7: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = {'a': 1}, key = 'b', default = 0
+
+    def lookup(d: dict, key: str, default=None):
+        """d[key] if present, else default (None when omitted)."""
+>       return d[key]
+               ^^^^^^
+E       KeyError: 'b'
+
+lookup.py:3: KeyError
+______________________________ test_none_default _______________________________
+
+    def test_none_default():
+>       assert lookup({"a": 1}, "z") is None
+               ^^^^^^^^^^^^^^^^^^^^^
+
+test_lookup.py:10: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+d = {'a': 1}, key = 'z', default = None
+
+    def lookup(d: dict, key: str, default=None):
+        """d[key] if present, else default (None when omitted)."""
+>       return d[key]
+               ^^^^^^
+E       KeyError: 'z'
+
+lookup.py:3: KeyError
+=========================== short test summary info ============================
+FAILED test_lookup.py::test_default - KeyError: 'b'
+FAILED test_lookup.py::test_none_default - KeyError: 'z'
+========================= 2 failed, 1 passed in 0.04s ==========================
+[0m
+[0m← [0mEdit lookup.py
+Index: /work/lookup.py
+===================================================================
+--- /work/lookup.py
++++ /work/lookup.py
+@@ -1,3 +1,3 @@
+ def lookup(d: dict, key: str, default=None):
+     """d[key] if present, else default (None when omitted)."""
+-    return d[key]
++    return d.get(key, default)
+
+[0m
+[0m$ [0mpython3 -m pytest
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /work
+collected 3 items
+
+test_lookup.py ...                                                       [100%]
+
+============================== 3 passed in 0.02s ===============================
+[0m
+[0m$ [0mgit diff
+diff --git a/lookup.py b/lookup.py
+index e8ba233..9a2e141 100644
+--- a/lookup.py
++++ b/lookup.py
+@@ -1,3 +1,3 @@
+ def lookup(d: dict, key: str, default=None):
+     """d[key] if present, else default (None when omitted)."""
+-    return d[key]
++    return d.get(key, default)
+[0m

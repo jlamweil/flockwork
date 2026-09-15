@@ -168,3 +168,38 @@ host-verify parent-child shape, attemptId/task/fixed/commit_sha as
 attributes. Pillar-3 is therefore an optional increment on Design B
 (one env-gated exporter), not a rebuild; receiver speaks both protobuf
 and JSON (`experiments/c2/otel_receiver.py`).
+
+## 9. c6 (01:15–01:25, next session): fresh-task batch → lane PROVEN
+
+`experiments/c6/` — the night goal (§8: "PROVEN needs the agree gate")
+closed the same night with **independent first-execution evidence, not
+same-task reruns**. Protocol frozen in `experiments/c6/FREEZE.md`
+(commit 6108331) BEFORE any run: 8 NEW seeded tasks (palindrome, clamp,
+average, revwords, vowels, lastindex, evens, lookup — never dispatched
+earlier tonight, intended fixes host-verified pre-freeze), same
+micro-difficulty class as the c2 five; machinery unchanged (rename(2)
+claims, 3 workers, `tools/worker_loop.py`, lane/model/image unchanged);
+mechanical requeue rule (environmental death = no commit ∧ no patch →
+one heir attempt max; merit failure final); ladder recompute through
+`tools/calibration.py` with UNCHANGED thresholds.
+
+- **Batch: 8/8 fixed** — 172.7 s wall, zero environmental deaths, zero
+  merit failures, zero requeues; exactly-once holds per generation
+  (8 claims / 8 verdicts / unique attempt ids); all commits carry
+  `Attempt: att-*`, worktrees clean, 0 leaked containers.
+- **Ladder: worker lane `google/gemini-3.5-flash-lite` 20/21,
+  LCB90 = 0.8122 ≥ .75 → rung PROVEN** (was 12/13 / .7177 verified).
+  Matches the pre-registered 8/8 prediction (20/21 → .8122) exactly.
+  The two model-death lanes stay measured at n=1, still honestly so.
+- **Lineage continuity:** the 8 new verdicts replayed as OTLP/JSON
+  spans (`experiments/c6/backfill_spans_c6.py`) — 16/16 spans, 8
+  traces, same parent-child shape and attribute layout as c5's 30
+  (`spans_c6_backfill.jsonl`).
+- **Disclosed process fault:** the freeze was committed after a
+  mis-started partial run (agent error); that attempt was killed, all
+  its artifacts destroyed unexamined, and the disclosure is written
+  into the frozen FREEZE.md itself. The counted run is the clean
+  re-run; freeze commit precedes every ledger row in history.
+
+Tests still 24/24 (`pytest tools/test_calibration.py
+tools/test_worker_loop.py`).

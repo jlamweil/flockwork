@@ -1,0 +1,9 @@
+diff --git a/palindrome.py b/palindrome.py
+index 59a46b5..0d95a47 100644
+--- a/palindrome.py
++++ b/palindrome.py
+@@ -1,3 +1,3 @@
+ def is_palindrome(s: str) -> bool:
+     """True if s reads the same forwards and backwards."""
+-    return s == s[-1:0:-1]
++    return s == s[::-1]

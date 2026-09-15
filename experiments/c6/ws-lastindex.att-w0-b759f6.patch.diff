@@ -1,0 +1,15 @@
+diff --git a/lastindex.py b/lastindex.py
+index de4967f..6a2a033 100644
+--- a/lastindex.py
++++ b/lastindex.py
+@@ -1,6 +1,6 @@
+ def last_index(nums: list[int], x: int) -> int:
+     """Index of the LAST occurrence of x in nums, or -1 if absent."""
+-    try:
+-        return nums.index(x)
+-    except ValueError:
+-        return -1
++    for i in range(len(nums) - 1, -1, -1):
++        if nums[i] == x:
++            return i
++    return -1

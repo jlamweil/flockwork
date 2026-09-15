@@ -1,0 +1,9 @@
+diff --git a/average.py b/average.py
+index a42968c..9501ce0 100644
+--- a/average.py
++++ b/average.py
+@@ -1,3 +1,3 @@
+ def average(nums: list[int]) -> float:
+     """Arithmetic mean of nums."""
+-    return sum(nums) // len(nums)
++    return sum(nums) / len(nums)

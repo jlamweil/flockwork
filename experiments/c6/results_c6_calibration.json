@@ -1,0 +1,63 @@
+{
+ "probe": "c6-calibrate",
+ "n_ledger_rows": 47,
+ "n_verdicts": 23,
+ "lanes": {
+  "github-copilot/glm-5.3-flash": {
+   "n": 1,
+   "successes": 0,
+   "tasks": [
+    "sumto:failed"
+   ],
+   "wilson_lcb90": 0.0,
+   "gate_rung": "measured",
+   "meets_min_n": false
+  },
+  "glm-5.3-flash": {
+   "n": 1,
+   "successes": 0,
+   "tasks": [
+    "sumto:failed"
+   ],
+   "wilson_lcb90": 0.0,
+   "gate_rung": "measured",
+   "meets_min_n": false
+  },
+  "google/gemini-3.5-flash-lite": {
+   "n": 21,
+   "successes": 20,
+   "tasks": [
+    "fizzbuzz:failed",
+    "fizzbuzz:fixed",
+    "fizzbuzz:fixed",
+    "sumto:fixed",
+    "initials:fixed",
+    "addtag:fixed",
+    "dates:fixed",
+    "addtag:fixed",
+    "sumto:fixed",
+    "dates:fixed",
+    "initials:fixed",
+    "fizzbuzz:fixed",
+    "sumto:fixed",
+    "clamp:fixed",
+    "lastindex:fixed",
+    "vowels:fixed",
+    "evens:fixed",
+    "lookup:fixed",
+    "average:fixed",
+    "palindrome:fixed",
+    "revwords:fixed"
+   ],
+   "wilson_lcb90": 0.8122,
+   "gate_rung": "proven",
+   "meets_min_n": true
+  }
+ },
+ "headline": {
+  "worker_leg_lane": "google/gemini-3.5-flash-lite",
+  "record": "20/21",
+  "lcb90": 0.8122,
+  "rung": "proven"
+ }
+}
