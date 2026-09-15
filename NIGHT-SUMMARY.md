@@ -65,3 +65,22 @@ Plus: killing the docker client leaks the container — kill by name.
 | `tools/worker_loop.py` | the reusable worker leg (Design B) |
 | `tools/calibration.py` | Wilson ladder/RAEE toolkit (unchanged, consumed) |
 | `HQ-INTEGRATION.md` | wiring map for the live batcher |
+
+## Second-session audit (22:30, same night)
+
+A fresh session re-verified the record without re-opening the frozen
+search — nothing above was changed:
+
+- All result JSONs re-read against the VERDICTS scoreboard: flock 10/10,
+  git-CAS 1-accept/31-reject ×10, HTTP p95 1055.7ms FAIL + posthoc 177.6ms,
+  OTel 2-span parent-child, worker att-9f3b2b15 (12.1s/416B/exit 0),
+  c3 exactly-once 5/5, c4 crash/revive flags, c5 15 verdicts + 30/30 spans —
+  all match.
+- LCB arithmetic re-derived: 12/13 at z=1.645 → 0.7177 exactly (the gate's
+  LCB90 convention), matching tools/calibration.py.
+- `pytest tools/test_calibration.py tools/test_worker_loop.py`: 24/24 pass.
+- Constraints: no git remote (pushes impossible); all commits inside
+  ~/swarmo; working tree clean; nested fixture repos correctly gitignored;
+  disk 79% / 96G free at audit (never filled); freeze commit (19:27)
+  precedes probe commit (21:21) in history, so freeze-before-verify is
+  git-provable.
