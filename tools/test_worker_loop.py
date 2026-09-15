@@ -28,25 +28,22 @@ def test_claim_is_exclusive(tmp_path):
     c2.release()
 
 
-def test_claim_survives_gc_without_release(tmp_path):
-    """An unreleased Claim must keep excluding others (fd stays open) —
-    the live lesson from c2: gc alone does not unlock; release() does."""
+def test_dropped_claim_keeps_lock(tmp_path):
+    """The c2 live lesson: dropping a Claim without release() leaves the
+    raw fd open, so the flock STILL excludes others until the process
+    exits or release() runs. release() is mandatory, gc is not enough.
+    """
     ledger = str(tmp_path / "ledger.jsonl")
 
-    def leak_a_claim():
-        worker_loop.Claim(ledger)  # no release — fd stays open in caller
+    def acquire_and_drop():
+        worker_loop.Claim(ledger)  # acquired, object dropped, fd leaked
 
-    # keep the object alive explicitly to model the leaked-fd case
-    holder = worker_loop.Claim(ledger)
+    acquire_and_drop()
     try:
-        leak_a_claim()
-        try:
-            worker_loop.Claim(ledger)
-            raise AssertionError("lock should still be held")
-        except worker_loop.AlreadyClaimed:
-            pass
-    finally:
-        holder.release()
+        worker_loop.Claim(ledger)
+        raise AssertionError("dropped-but-unreleased claim should still hold")
+    except worker_loop.AlreadyClaimed:
+        pass
 
 
 def test_append_row_is_fsynced_jsonl(tmp_path):
