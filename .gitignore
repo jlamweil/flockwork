@@ -17,3 +17,6 @@ experiments/c4/ws-*/
 # c6 fixture workspaces + queue (evidence = siblings: ledger, patches, results JSON)
 experiments/c6/ws-*/
 experiments/c6/queue/
+
+# c7 scratch git-native probe repo (evidence = results JSON + refs dump)
+experiments/c7/gnq/
