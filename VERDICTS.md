@@ -153,11 +153,13 @@ production gate (Wilson LCB90, accept .70 / agree .75, MIN_N=5):
 | github-copilot/glm-5.3-flash | 0/1 | 0.0 | measured (n < MIN_N) |
 
 The one failure in 13 is E10-d — an environmental death the retry
-semantics recovered from, still honestly counted. PROVEN needs the
-agree gate (≥.75); more nights of data, not same-night reruns, promote
-the lane. The two model-death lanes are held at `measured`: the ladder
-refuses to promote or refute on n=1 — exactly the conservatism E7
-claimed as load-bearing.
+semantics recovered from, still honestly counted. (n counts leg
+attempts — each an independent execution; fizzbuzz legitimately
+appears three times: failed, fixed, re-fixed via the c4-style retry
+path.) PROVEN needs the agree gate (≥.75); more nights of data, not
+same-night reruns, promote the lane. The two model-death lanes are
+held at `measured`: the ladder refuses to promote or refute on n=1 —
+exactly the conservatism E7 claimed as load-bearing.
 
 **Lineage backfill** (`experiments/c5/backfill_spans.py`): all 15
 verdicts replayed as OTLP/JSON spans to the local collector — 30/30

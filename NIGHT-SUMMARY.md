@@ -29,9 +29,12 @@ repo; `git log` is the audit trail.**
   by name, requeued, heir completed; exactly one final verdict, zero
   leaked containers.
 - c5: tonight's 15 verdicts through the production Wilson gate →
-  worker lane **VERIFIED (12/13, LCB90 .718)**; model-death lanes held
+  worker lane **VERIFIED (12/13 attempts, LCB90 .718)**; model-death lanes held
   at measured. Verdicts also replayed as OTLP/JSON lineage spans
-  (30/30 valid, parent-child intact).
+  (30/30 valid, parent-child intact). Note: the n counts leg attempts
+  (each an independent execution), not distinct tasks — fizzbuzz
+  appears 3× (one environmental death, two fixes, including the c4
+  retry path).
 
 ## Mechanical knowledge worth its weight (E10, expanded)
 
