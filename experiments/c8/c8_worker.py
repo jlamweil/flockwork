@@ -8,7 +8,9 @@ is a server-side atomic ref update:
            (empty expect = must-not-exist = CAS-create; rc!=0 = lost)
   return = plumbing commit with `Attempt:` trailer, pushed with the same
            create-once CAS on refs/tasks/<task>
-  note   = `notes --ref=verdicts add -F -` (server-side; bounded retry)
+  verdict = CAS-created refs/verdicts/<task> at a verdict commit (the
+           create-once lease again — post-run3 repair, disclosed; notes
+           were dropped: read-modify-write lost updates under burst)
   sweep  = local on the repo host: reconcile-by-probe kills the tagged
            orphan ON example-host-b via ssh (the cross-host leg), preserves the
            dead attempt at refs/claims/<task>@<att>, CAS-deletes the
@@ -104,7 +106,7 @@ def cas_claim(coord: Coord, scratch: str, task: str, att: str) -> bool:
 
 
 def do_task(coord: Coord, scratch: str, task: str, att: str) -> dict:
-    """Return commit (create-once CAS) + verdict note (bounded retry)."""
+    """Return commit (create-once CAS) + verdict ref (same CAS)."""
     base_tree = sh(["git", "-C", scratch, "rev-parse",
                     "origin/main^{tree}"]).stdout.strip()
     blob = sh(["git", *GITID, "-C", scratch, "hash-object", "-w", "--stdin"],
@@ -132,16 +134,30 @@ def do_task(coord: Coord, scratch: str, task: str, att: str) -> dict:
             rejected = True  # someone else closed this task: never retry
             break
         time.sleep(0.3)
-    note_retries = 0
+    # verdict = CAS-created refs/verdicts/<task> at a verdict commit.
+    # Repair vs frozen sketch (disclosed, run3): refs/notes/verdicts lost
+    # annotations under the real run's concurrent burst (git notes is
+    # read-modify-write per tree — last writer wins); a named verdict ref
+    # with the same create-once CAS as claims cannot lose an update and
+    # cannot double-land. Same semantics, no thresholds touched.
+    vsha = sh(["git", *GITID, "-C", scratch, "commit-tree", base_tree,
+               "-m", f"verdict\ntask: {task}\nattempt: {att}\n"
+                     f"fixed: true\n"]).stdout.strip()
+    verdict_retries, verdict_pushed = 0, False
     for attempt in range(3):
-        r = coord.srv("notes", "--ref=verdicts", "add", "-F", "-", sha,
-                      inp=f"task: {task}\nattempt: {att}\nfixed: true\n")
+        r = coord.client("-C", scratch, "push",
+                         f"--force-with-lease=refs/verdicts/{task}:",
+                         coord.url, f"{vsha}:refs/verdicts/{task}",
+                         label="push-verdict")
         if r.returncode == 0:
+            verdict_pushed = True
             break
-        note_retries += 1
+        verdict_retries += 1
         time.sleep(0.2)
     return {"return": sha, "return_pushed": pushed,
-            "return_rejected": rejected, "note_retries": note_retries}
+            "return_rejected": rejected, "verdict": vsha,
+            "verdict_pushed": verdict_pushed,
+            "verdict_retries": verdict_retries}
 
 
 def scan(coord: Coord) -> tuple:
@@ -232,17 +248,11 @@ def scan_tagged_local(tag: str) -> list:
     return hits
 
 
-def verdict_text(coord: Coord) -> str:
-    r = coord.srv("notes", "--ref=verdicts", "list")
-    shas = [ln.split()[0] for ln in r.stdout.splitlines() if ln.strip()]
-    if not shas:
-        return ""
-    return coord.srv("cat-file", "--batch",
-                     inp="".join(s + "\n" for s in shas)).stdout
-
-
-def has_final_verdict(text: str, task: str) -> bool:
-    return f"task: {task}\n" in text and "fixed: true" in text
+def verdict_exists(coord: Coord, task: str) -> bool:
+    """Post-repair verdict substrate: refs/verdicts/<task> (CAS-created,
+    exactly-once by name)."""
+    return bool(coord.srv("rev-parse", "--verify", "--quiet",
+                          f"refs/verdicts/{task}").stdout.strip())
 
 
 def pgrep_pattern(s: str) -> str:
@@ -258,12 +268,11 @@ def sweep_mode(coord: Coord, example-host-b_ssh: list) -> None:
     (1) kill the tagged orphan on example-host-b via ssh; (2) preserve the dead
     attempt at refs/claims/<task>@<att> (create-if-absent); (3) CAS-delete
     the live claim. Interrupted between (2) and (3) re-resolves on rerun."""
-    text = verdict_text(coord)
     requeued, killed_example-host-b, killed_local = [], {}, []
     for task in ALL_TASKS:
         val = coord.srv("rev-parse", "--verify", "--quiet",
                         f"refs/claims/{task}").stdout.strip()
-        if not val or has_final_verdict(text, task):
+        if not val or verdict_exists(coord, task):
             continue
         subject = coord.srv("log", "-1", "--format=%s", val).stdout.strip()
         att = subject.split()[-1]

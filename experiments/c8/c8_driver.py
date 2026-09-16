@@ -17,6 +17,7 @@ processes are killed and disclosed.
 import json
 import os
 import selectors
+import shlex
 import statistics
 import subprocess
 import sys
@@ -45,11 +46,12 @@ def sh(cmd, inp=None, timeout=90, env=None):
 class Audit:
     """git reads ONLY, all via ssh-exec from example-host-b (transport-agnostic)."""
 
-    def __init__(self):
-        self.remote = SSH_T + ["git", "-C", COORD_PATH]
-
     def srv(self, *args, inp=None):
-        r = sh(self.remote + list(args), inp=inp)
+        # ssh joins its command args and hands them to the REMOTE shell:
+        # quote-join ourselves so %(rounds)parens etc. survive intact
+        cmd = " ".join(shlex.quote(a) for a in ["git", "-C", COORD_PATH]
+                       + list(args))
+        r = sh(SSH_T + [cmd], inp=inp)
         if r.returncode not in (0, 1):
             raise RuntimeError(f"audit {' '.join(args[:2])}: {r.stderr[:300]}")
         return r.stdout
@@ -77,33 +79,21 @@ class Audit:
                     out.append(ln.split("Attempt: ", 1)[1].strip())
         return out
 
-    def verdicts(self) -> list:
-        """Verdict note bodies (c7 parse: find the blob column first)."""
-        lst = self.srv("notes", "--ref=verdicts", "list").split()
-        if not lst:
-            return []
-        check = self.srv("cat-file", "--batch-check",
-                         inp="\n".join(lst[:2])).splitlines()
-        blob_col = 0 if check[0].split()[1] == "blob" else 1
-        blobs = lst[blob_col::2]
-        text = self.srv("cat-file", "--batch",
-                        inp="".join(b + "\n" for b in blobs))
-        notes, cur = [], None
-        for ln in text.splitlines():
-            if not ln.strip():
-                if cur:
-                    notes.append(cur)
-                cur = None
+    def verdicts(self) -> dict:
+        """Post-repair substrate: refs/verdicts/<task> at verdict commits;
+        returns {task: {task, attempt, fixed}} parsed from messages."""
+        out = {}
+        for n, sha in self.refs().items():
+            if not n.startswith("refs/verdicts/"):
                 continue
-            if cur is None:
-                cur = {}
-                continue
-            if ":" in ln:
-                k, v = ln.split(":", 1)
-                cur[k.strip()] = v.strip()
-        if cur:
-            notes.append(cur)
-        return notes
+            body = self.srv("log", "-1", "--format=%B", sha)
+            d = {}
+            for ln in body.splitlines():
+                if ":" in ln:
+                    k, v = ln.split(":", 1)
+                    d[k.strip()] = v.strip()
+            out[n[len("refs/verdicts/"):]] = d
+        return out
 
 
 def scan_tagged_local(tag: str) -> list:
@@ -175,9 +165,10 @@ def write_refs_dump() -> None:
         for n, sha in sorted(by_ref.items()):
             if n.startswith("refs/claims/"):
                 lines.append(f"{n}: {a.subject(sha)}")
-        lines.append("== notes (verdicts) ==")
-        for v in a.verdicts():
-            lines.append(json.dumps(v, sort_keys=True))
+        lines.append("== verdict refs (messages) ==")
+        for n in sorted(k for k in by_ref if k.startswith("refs/verdicts/")):
+            body = a.srv("log", "-1", "--format=%B", by_ref[n])
+            lines.append(f"{n} :: " + body.strip().replace("\n", " | "))
         lines.append("== refs/tasks commit bodies ==")
         for n in sorted(k for k in by_ref if k.startswith("refs/tasks/")):
             for s in a.srv("rev-list", n).split():
@@ -214,7 +205,24 @@ def main() -> None:
              "literal pattern → would phantom-match orphan scans and "
              "self-kill the sweep's kill leg) — bracket-pattern trick "
              "applied to sweep pgrep/kill/verify, orphans_left_example-host-a, "
-             "kill_leftovers"]}
+             "kill_leftovers",
+             "run3 ~08:14+02:00: audit for-each-ref --format=%(refname) "
+             "died — ssh joins argv and the remote shell eats the parens; "
+             "all earlier phases ran (contention 9/9 wins W=0.57s; "
+             "victim_claim_no_verdict True; sweep killed the example-host-b orphan "
+             "cross-host pids=[1066023] gone=true; sweep2 idempotent; "
+             "heir done). RUN-FOUND PROTOCOL DEFECT + REPAIR (disclosed, "
+             "no threshold touched): sweep requeued t4/t6/t9 — clean-"
+             "phase return commits had landed but their refs/notes/"
+             "verdicts annotations were silently lost: git notes is "
+             "read-modify-write per tree (last writer wins), so the "
+             "6-worker note burst dropped 3 of 9. Repair: verdicts moved "
+             "to CAS-created refs/verdicts/<task> verdict commits (same "
+             "create-once lease as claims — cannot lose an update, "
+             "cannot double-land); audit/dump read verdict messages from "
+             "refs. Evidence for the discarded run preserved as "
+             "results_c8_run3_discarded.json; shlex.quote-join applied "
+             "to every ssh-transported git command"]}
     spawned = []
     try:
         fr = sh(["git", "-C", SWARMO, "log", "-1", "--format=%H %cI",
@@ -324,15 +332,15 @@ def main() -> None:
             "return_ref_absent": not a.srv(
                 "rev-parse", "--verify", "--quiet",
                 f"refs/tasks/{CRASH}").strip(),
-            "no_verdict_note": not any(
-                v.get("task") == CRASH and v.get("fixed") == "true"
-                for v in a.verdicts()),
+            "verdict_ref_absent": not a.srv(
+                "rev-parse", "--verify", "--quiet",
+                f"refs/verdicts/{CRASH}").strip(),
         }
         R["post_kill_snapshot"] = snapshot
         R["snapshot_att_match"] = snapshot["claim_att"] == victim_att
         victim_claim_no_verdict = all([
             snapshot["claim_value_present"], snapshot["return_ref_absent"],
-            snapshot["no_verdict_note"], R["snapshot_att_match"]])
+            snapshot["verdict_ref_absent"], R["snapshot_att_match"]])
         R["victim_claim_no_verdict"] = victim_claim_no_verdict
 
         # ---------- sweep x2, run ON example-host-a ----------
@@ -361,7 +369,9 @@ def main() -> None:
         hw.wait(timeout=20)
         heir_att = heir["att"]
         R["heir"] = {k: heir.get(k) for k in ("event", "att", "task",
-                                              "return_pushed", "note_retries")}
+                                              "return_pushed",
+                                              "verdict_pushed",
+                                              "verdict_retries")}
         assert heir["event"] == "done", f"heir failed: {heir}"
 
         # ---------- audit (git reads only, via ssh from example-host-b) ---------
@@ -375,12 +385,9 @@ def main() -> None:
         tasks = {n[len("refs/tasks/")]: sha for n, sha in by_ref.items()
                  if n.startswith("refs/tasks/")}
         verdicts = a.verdicts()
-        verdict_count, verdict_att = {}, {}
-        for v in verdicts:
-            t = v.get("task")
-            if t:
-                verdict_count[t] = verdict_count.get(t, 0) + 1
-                verdict_att[t] = v.get("attempt")
+        verdict_count = {t: 1 for t, d in verdicts.items()
+                         if d.get("fixed") == "true"}
+        verdict_att = {t: d.get("attempt") for t, d in verdicts.items()}
         claim_atts = {t: a.att_of_claim(sha)
                       for t, sha in live_claims.items()}
         trailer = {t: a.returns_with_trailer(t) for t in tasks}
@@ -412,12 +419,12 @@ def main() -> None:
                     atts.add(a.att_of_claim(sha))
             atts.update(trailer.get(t, []))
             recon[t] = {"attempts": sorted(atts),
-                        "verdict_note_count": verdict_count.get(t, 0)}
+                        "verdict_count": verdict_count.get(t, 0)}
         R["reconstruction"] = recon
         R["ground_truth"] = gt
         attempts_countable = all(
             recon[t]["attempts"] == gt[t]
-            and recon[t]["verdict_note_count"] == 1
+            and recon[t]["verdict_count"] == 1
             for t in CLEAN + [CRASH])
         dead_preserved = (
             preserved.get(f"{CRASH}@{victim_att}") is not None

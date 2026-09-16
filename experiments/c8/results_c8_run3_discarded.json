@@ -1,0 +1,210 @@
+{
+ "probe": "c8-two-host-claim-cas",
+ "freeze": "experiments/c8/FREEZE-C8.md",
+ "driver_started_at": "2026-09-16T08:11:46+0200",
+ "discarded": true,
+ "disclosed_discarded_runs": [
+  "run1 ~08:05+02:00: AttributeError Audit.att_of_claim (helper dropped in final driver rewrite; call sites kept it) \u2014 died at post-kill snapshot; contention phase had already finished 9/9 wins, all 6 workers done, W=0.48s; victim's tagged child killed by hand after, scratch cleaned, nothing counted",
+  "run2 ~08:09+02:00: AttributeError 'str'.stdout \u2014 Audit.verdicts() called .stdout on srv()'s return (already the stdout string); died at post-kill snapshot again; contention 9/9 wins, W=0.63s; same hand-cleanup. Also found+fixed pre-run3: heir.wait \u2192 hw.wait (latent), and pgrep-over-ssh self-match (remote wrapper shell carries the literal pattern \u2192 would phantom-match orphan scans and self-kill the sweep's kill leg) \u2014 bracket-pattern trick applied to sweep pgrep/kill/verify, orphans_left_example-host-a, kill_leftovers"
+ ],
+ "freeze_commit_sha": "3ccfb3a99b0dbf3ed81153601c072352b884f0d5",
+ "freeze_committed_at": "2026-09-16T07:50:17+02:00",
+ "df_example-host-b_pre": "/dev/nvme0n1p3  467G  344G   99G  78% /",
+ "df_example-host-a_pre": "/dev/nvme0n1p3  936G  755G  134G  85% /",
+ "clock_skew_s": 0.272,
+ "no_b_machinery": true,
+ "workers": [
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 1,
+   "losses": 0,
+   "startup_ms": 25.3
+  },
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 2,
+   "losses": 1,
+   "startup_ms": 25.2
+  },
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 3,
+   "losses": 1,
+   "startup_ms": 32.2
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 1,
+   "losses": 1,
+   "startup_ms": 6.2
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 2,
+   "losses": 0,
+   "startup_ms": 6.5
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 3,
+   "losses": 0,
+   "startup_ms": 6.5
+  }
+ ],
+ "wins_detail": [
+  [
+   {
+    "task": "t2",
+    "att": "att-example-host-b1-13daf4",
+    "return": "1976442e7ae8a5725a2cb9f755f49e35c5669aca",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   },
+   {
+    "task": "t5",
+    "att": "att-example-host-b1-9c11a8",
+    "return": "0182b5984fedd0caef6c76b0d304317803206287",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   },
+   {
+    "task": "t8",
+    "att": "att-example-host-b1-c2d757",
+    "return": "33b2f7b1292d5a052017dfe6fc9ab25967c4d867",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t3",
+    "att": "att-example-host-b2-f2bfd7",
+    "return": "c2e8159a58044b5dca82819e49fb54506486f492",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   },
+   {
+    "task": "t6",
+    "att": "att-example-host-b2-bded22",
+    "return": "226c740bb3235cf6ecb9d4dc375219410bd03095",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t4",
+    "att": "att-example-host-b3-61836b",
+    "return": "0bec439c3f0791ca87ee07275144087612e37232",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   },
+   {
+    "task": "t7",
+    "att": "att-example-host-b3-daa83b",
+    "return": "906037a6e175ecb5048289a74d08ee411381aae1",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   }
+  ],
+  [],
+  [
+   {
+    "task": "t9",
+    "att": "att-example-host-a2-9e1617",
+    "return": "507cd5f688ca960d202518c395096b7ca6f44e01",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t1",
+    "att": "att-example-host-a3-e88763",
+    "return": "62e33c4567d7096d15a40aa2792baf46c7637720",
+    "return_pushed": true,
+    "return_rejected": false,
+    "note_retries": 0
+   }
+  ]
+ ],
+ "W_contention_s": 0.57,
+ "wins_sum": 9,
+ "victim_killed_at": "2026-09-16T08:11:49+0200",
+ "post_kill_snapshot": {
+  "claim_value_present": true,
+  "claim_att": "att-example-host-bV-84c9ba",
+  "return_ref_absent": true,
+  "no_verdict_note": true
+ },
+ "snapshot_att_match": true,
+ "victim_claim_no_verdict": true,
+ "sweep_spawn_cmd": "ssh -o BatchMode=yes example-host-a python3 -u /tmp/c8/c8_worker.py sweep /tmp/c8/coord.git you@example-host-b",
+ "sweep1": {
+  "event": "swept",
+  "requeued": [
+   "t4.att-example-host-b3-61836b",
+   "t6.att-example-host-b2-bded22",
+   "t9.att-example-host-a2-9e1617",
+   "t-crash.att-example-host-bV-84c9ba"
+  ],
+  "killed_example-host-b": {
+   "c8-t4-att-example-host-b3-61836b": {
+    "pids": [],
+    "gone": true
+   },
+   "c8-t6-att-example-host-b2-bded22": {
+    "pids": [],
+    "gone": true
+   },
+   "c8-t9-att-example-host-a2-9e1617": {
+    "pids": [],
+    "gone": true
+   },
+   "c8-t-crash-att-example-host-bV-84c9ba": {
+    "pids": [
+     1066023
+    ],
+    "gone": true
+   }
+  },
+  "killed_local": []
+ },
+ "sweep2": {
+  "event": "swept",
+  "requeued": [],
+  "killed_example-host-b": {},
+  "killed_local": []
+ },
+ "heir": {
+  "event": "done",
+  "att": "att-example-host-aH-1fdc9f",
+  "task": "t-crash",
+  "return_pushed": true,
+  "note_retries": 0
+ },
+ "discard_reason": "RuntimeError: audit for-each-ref --format=%(refname) %(objectname): bash: -c: line 1: syntax error near unexpected token `('\nbash: -c: line 1: `git -C /tmp/c8/coord.git for-each-ref --format=%(refname) %(objectname)'\n\nTraceback (most recent call last):\n  File \"home/you/swarmo/experiments/c8/c8_driver.py\", line 368, in main\n    by_ref = a.refs()\n  File \"home/you/swarmo/experiments/c8/c8_driver.py\", line 59, in refs\n    for line in self.srv(\"for-each-ref\",\n  File \"home/you/swarmo/experiments/c8/c8_driver.py\", line 54, in srv\n    raise RuntimeError(f\"audit {' '.join(args[:2])}: {r.stderr[:300]}\")\nRuntimeError: audit for-each-ref --format=%(refname) %(objectname): bash: -c: line 1: syntax error near unexpected token `('\nbash: -c: line 1: `git -C /tmp/c8/coord.git for-each-ref --format=%(refname) %(objectname)'\n\n",
+ "verdict": "DISCARDED-NOT-COUNTED",
+ "wall_s": 6.2,
+ "driver_finished_at": "2026-09-16T08:11:53+0200"
+}
