@@ -1,0 +1,3 @@
+dump error: RuntimeError: audit for-each-ref --format=%(refname) %(objectname): bash: -c: line 1: syntax error near unexpected token `('
+bash: -c: line 1: `git -C /tmp/c8/coord.git for-each-ref --format=%(refname) %(objectname)'
+

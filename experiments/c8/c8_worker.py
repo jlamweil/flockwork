@@ -245,6 +245,14 @@ def has_final_verdict(text: str, task: str) -> bool:
     return f"task: {task}\n" in text and "fixed: true" in text
 
 
+def pgrep_pattern(s: str) -> str:
+    """pgrep -f pattern that cannot match the remote wrapper shell's own
+    cmdline (which carries the literal pattern string): bracket one char
+    so the regex still matches the real target but not the pattern text."""
+    i = len(s) // 2
+    return s[:i] + "[" + s[i] + "]" + s[i + 1:]
+
+
 def sweep_mode(coord: Coord, example-host-b_ssh: list) -> None:
     """Runs ON the repo host (example-host-a). c7's crash-safe order, cross-host:
     (1) kill the tagged orphan on example-host-b via ssh; (2) preserve the dead
@@ -260,11 +268,12 @@ def sweep_mode(coord: Coord, example-host-b_ssh: list) -> None:
         subject = coord.srv("log", "-1", "--format=%s", val).stdout.strip()
         att = subject.split()[-1]
         tag = f"c8-{task}-{att}"
-        r = sh(example-host-b_ssh + ["pgrep", "-f", tag])
+        pat = pgrep_pattern(tag)
+        r = sh(example-host-b_ssh + ["pgrep", "-f", pat])
         pids = [int(p) for p in r.stdout.split()]
         for pid in pids:
             sh(example-host-b_ssh + ["kill", "-9", str(pid)])
-        verify = sh(example-host-b_ssh + ["pgrep", "-f", tag])
+        verify = sh(example-host-b_ssh + ["pgrep", "-f", pat])
         killed_example-host-b[tag] = {"pids": pids, "gone": verify.returncode != 0}
         for pid in scan_tagged_local(tag):
             try:

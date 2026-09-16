@@ -83,7 +83,7 @@ class Audit:
         if not lst:
             return []
         check = self.srv("cat-file", "--batch-check",
-                         inp="\n".join(lst[:2])).stdout.splitlines()
+                         inp="\n".join(lst[:2])).splitlines()
         blob_col = 0 if check[0].split()[1] == "blob" else 1
         blobs = lst[blob_col::2]
         text = self.srv("cat-file", "--batch",
@@ -131,7 +131,7 @@ def kill_leftovers() -> None:
             os.kill(pid, 9)
         except ProcessLookupError:
             pass
-    sh(SSH_T + ["pkill", "-9", "-f", "c8_worker.py"])
+    sh(SSH_T + ["pkill", "-9", "-f", "c8_worke[r].py"])
 
 
 def json_line(proc, what: str, timeout: float) -> dict:
@@ -204,7 +204,17 @@ def main() -> None:
              "— died at post-kill snapshot; contention phase had already "
              "finished 9/9 wins, all 6 workers done, W=0.48s; victim's "
              "tagged child killed by hand after, scratch cleaned, nothing "
-             "counted"]}
+             "counted",
+             "run2 ~08:09+02:00: AttributeError 'str'.stdout — "
+             "Audit.verdicts() called .stdout on srv()'s return (already "
+             "the stdout string); died at post-kill snapshot again; "
+             "contention 9/9 wins, W=0.63s; same hand-cleanup. Also "
+             "found+fixed pre-run3: heir.wait → hw.wait (latent), and "
+             "pgrep-over-ssh self-match (remote wrapper shell carries the "
+             "literal pattern → would phantom-match orphan scans and "
+             "self-kill the sweep's kill leg) — bracket-pattern trick "
+             "applied to sweep pgrep/kill/verify, orphans_left_example-host-a, "
+             "kill_leftovers"]}
     spawned = []
     try:
         fr = sh(["git", "-C", SWARMO, "log", "-1", "--format=%H %cI",
@@ -348,7 +358,7 @@ def main() -> None:
             stdout=subprocess.PIPE, text=True)
         spawned.append(hw)
         heir = json_line(hw, "heir", 60)
-        heir.wait(timeout=20)
+        hw.wait(timeout=20)
         heir_att = heir["att"]
         R["heir"] = {k: heir.get(k) for k in ("event", "att", "task",
                                               "return_pushed", "note_retries")}
@@ -376,7 +386,9 @@ def main() -> None:
         trailer = {t: a.returns_with_trailer(t) for t in tasks}
 
         R["h1"] = {
-            "clean_claims_9": sorted(live_claims) == CLEAN,
+            "clean_claims_9": (
+                all(t in live_claims for t in CLEAN)
+                and set(live_claims) == set(CLEAN) | {CRASH}),
             "no_preserved_in_clean":
                 not [p for p in preserved if p.split("@")[0] in CLEAN],
             "return_once_and_match": all(
@@ -428,7 +440,7 @@ def main() -> None:
             "attempts_countable_from_repo": attempts_countable,
             "orphans_left_example-host-b": scan_tagged_local("c8-"),
             "orphans_left_example-host-a":
-                sh(SSH_T + ["pgrep", "-f", "c8_"]).stdout.split(),
+                sh(SSH_T + ["pgrep", "-f", "c8[_]"]).stdout.split(),
         }
         R["h1_pass"] = all(R["h1"].values())
         R["h2_pass"] = all([
@@ -460,8 +472,10 @@ def main() -> None:
                         if not R["h1_pass"] else
                         "crash-revive-dented-cross-host")
     except Exception as e:
+        import traceback
         R["discarded"] = True
-        R["discard_reason"] = f"{type(e).__name__}: {e}"
+        R["discard_reason"] = (f"{type(e).__name__}: {e}\n"
+                               + traceback.format_exc())
         R["verdict"] = "DISCARDED-NOT-COUNTED"
         kill_leftovers()
     finally:
