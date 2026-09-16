@@ -65,6 +65,9 @@ class Audit:
     def subject(self, sha: str) -> str:
         return self.srv("log", "-1", "--format=%s", sha).strip()
 
+    def att_of_claim(self, sha: str) -> str:
+        return self.subject(sha).split()[-1]
+
     def returns_with_trailer(self, task: str) -> list:
         out = []
         for s in self.srv("rev-list", f"refs/tasks/{task}").split():
@@ -192,7 +195,16 @@ def main() -> None:
     t0 = time.perf_counter()
     R = {"probe": "c8-two-host-claim-cas",
          "freeze": "experiments/c8/FREEZE-C8.md",
-         "driver_started_at": iso_now(), "discarded": False}
+         "driver_started_at": iso_now(), "discarded": False,
+         # disclosure (c6/c7 discipline): runs discarded post-freeze,
+         # never counted; audit plumbing only, no protocol flag evaluated
+         "disclosed_discarded_runs": [
+             "run1 ~08:05+02:00: AttributeError Audit.att_of_claim "
+             "(helper dropped in final driver rewrite; call sites kept it) "
+             "— died at post-kill snapshot; contention phase had already "
+             "finished 9/9 wins, all 6 workers done, W=0.48s; victim's "
+             "tagged child killed by hand after, scratch cleaned, nothing "
+             "counted"]}
     spawned = []
     try:
         fr = sh(["git", "-C", SWARMO, "log", "-1", "--format=%H %cI",
