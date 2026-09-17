@@ -1,0 +1,388 @@
+{
+ "probe": "c8-two-host-claim-cas",
+ "freeze": "experiments/c8/FREEZE-C8.md",
+ "driver_started_at": "2026-09-17T17:11:20+0200",
+ "discarded": false,
+ "disclosed_discarded_runs": [
+  "run1 ~08:05+02:00: AttributeError Audit.att_of_claim (helper dropped in final driver rewrite; call sites kept it) \u2014 died at post-kill snapshot; contention phase had already finished 9/9 wins, all 6 workers done, W=0.48s; victim's tagged child killed by hand after, scratch cleaned, nothing counted",
+  "run2 ~08:09+02:00: AttributeError 'str'.stdout \u2014 Audit.verdicts() called .stdout on srv()'s return (already the stdout string); died at post-kill snapshot again; contention 9/9 wins, W=0.63s; same hand-cleanup. Also found+fixed pre-run3: heir.wait \u2192 hw.wait (latent), and pgrep-over-ssh self-match (remote wrapper shell carries the literal pattern \u2192 would phantom-match orphan scans and self-kill the sweep's kill leg) \u2014 bracket-pattern trick applied to sweep pgrep/kill/verify, orphans_left_example-host-a, kill_leftovers",
+  "run3 ~08:14+02:00: audit for-each-ref --format=%(refname) died \u2014 ssh joins argv and the remote shell eats the parens; all earlier phases ran (contention 9/9 wins W=0.57s; victim_claim_no_verdict True; sweep killed the example-host-b orphan cross-host pids=[1066023] gone=true; sweep2 idempotent; heir done). RUN-FOUND PROTOCOL DEFECT + REPAIR (disclosed, no threshold touched): sweep requeued t4/t6/t9 \u2014 clean-phase return commits had landed but their refs/notes/verdicts annotations were silently lost: git notes is read-modify-write per tree (last writer wins), so the 6-worker note burst dropped 3 of 9. Repair: verdicts moved to CAS-created refs/verdicts/<task> verdict commits (same create-once lease as claims \u2014 cannot lose an update, cannot double-land); audit/dump read verdict messages from refs. Evidence for the discarded run preserved as results_c8_run3_discarded.json; shlex.quote-join applied to every ssh-transported git command"
+ ],
+ "freeze_commit_sha": "3ccfb3a99b0dbf3ed81153601c072352b884f0d5",
+ "freeze_committed_at": "2026-09-16T07:50:17+02:00",
+ "df_example-host-b_pre": "/dev/nvme0n1p3  467G  355G   89G  81% /",
+ "df_example-host-a_pre": "/dev/nvme0n1p3  936G  755G  134G  85% /",
+ "clock_skew_s": 0.343,
+ "no_b_machinery": true,
+ "workers": [
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 1,
+   "losses": 0,
+   "startup_ms": 50.6
+  },
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 2,
+   "losses": 0,
+   "startup_ms": 49.4
+  },
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 3,
+   "losses": 0,
+   "startup_ms": 48.6
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 1,
+   "losses": 0,
+   "startup_ms": 15.2
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 2,
+   "losses": 0,
+   "startup_ms": 14.6
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 3,
+   "losses": 0,
+   "startup_ms": 13.2
+  }
+ ],
+ "wins_detail": [
+  [
+   {
+    "task": "t2",
+    "att": "att-example-host-b1-a9277a",
+    "return": "14dd3edbb6013bb6db6223d4bc5028b375ca731e",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "0b41280dc6ca47455137793a7574e3dbeb36aae2",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   },
+   {
+    "task": "t5",
+    "att": "att-example-host-b1-177eee",
+    "return": "a6e26124ec0aed3f0aaf1ea61854488eedd71fd3",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "7fa8e600081ffff4de0cbac62aadfea3613658b3",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t3",
+    "att": "att-example-host-b2-74a342",
+    "return": "c1d99e441dba1f8f4f4801c48003682f123a1db2",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "c51a14eef711f2d38d97fb82a7552666cb07ebfe",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   },
+   {
+    "task": "t6",
+    "att": "att-example-host-b2-58592d",
+    "return": "a3c0364bf3e937924384e2f530b3dc07713c64a4",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "cba1040eb8447e2e12979219095e36b1741e7a5a",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t4",
+    "att": "att-example-host-b3-96240c",
+    "return": "30771dae05db38141198a1d9746a1d1def0befb5",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "987704e38d8ded26d1c51a861da0bb6aaeed0adf",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   },
+   {
+    "task": "t7",
+    "att": "att-example-host-b3-873d88",
+    "return": "d62325de4358c2d4414be81b54d8ab10f3808300",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "36350a28f527331bc40abc08f52d43f435f13b55",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t8",
+    "att": "att-example-host-a1-4914c5",
+    "return": "6817bc6ac51a1bcdc752fce5d94b5667eddaad0a",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "a0bcac58ca122c3bca129e85bbdc5158866a3c15",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t9",
+    "att": "att-example-host-a2-56c7aa",
+    "return": "3f8b489d0c63f0ec58edd42bf64349afe1b484e5",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "1db17e22e69c901949c648bfda6cabe1a4b0e0dd",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t1",
+    "att": "att-example-host-a3-a51083",
+    "return": "3d01a328fb525c61edf2f210f2582a02077a3ee2",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "6ea65f97f9a608c8b448fb258deb5571a0df902a",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ]
+ ],
+ "W_contention_s": 0.45,
+ "wins_sum": 9,
+ "victim_killed_at": "2026-09-17T17:11:23+0200",
+ "post_kill_snapshot": {
+  "claim_value_present": true,
+  "claim_att": "att-example-host-bV-ec2c42",
+  "return_ref_absent": true,
+  "verdict_ref_absent": true
+ },
+ "snapshot_att_match": true,
+ "victim_claim_no_verdict": true,
+ "sweep_spawn_cmd": "ssh -o BatchMode=yes example-host-a python3 -u /tmp/c8/c8_worker.py sweep /tmp/c8/coord.git you@example-host-b",
+ "sweep1": {
+  "event": "swept",
+  "requeued": [
+   "t-crash.att-example-host-bV-ec2c42"
+  ],
+  "killed_example-host-b": {
+   "c8-t-crash-att-example-host-bV-ec2c42": {
+    "pids": [
+     116623
+    ],
+    "gone": true
+   }
+  },
+  "killed_local": []
+ },
+ "sweep2": {
+  "event": "swept",
+  "requeued": [],
+  "killed_example-host-b": {},
+  "killed_local": []
+ },
+ "heir": {
+  "event": "done",
+  "att": "att-example-host-aH-4fb319",
+  "task": "t-crash",
+  "return_pushed": true,
+  "verdict_pushed": true,
+  "verdict_retries": 0
+ },
+ "h1": {
+  "clean_claims_9": true,
+  "no_preserved_in_clean": true,
+  "return_once_and_match": true,
+  "verdicts_one_per_task": true,
+  "verdict_att_matches_claim": true,
+  "wins_sum_9_and_unique": true
+ },
+ "reconstruction": {
+  "t1": {
+   "attempts": [
+    "att-example-host-a3-a51083"
+   ],
+   "verdict_count": 1
+  },
+  "t2": {
+   "attempts": [
+    "att-example-host-b1-a9277a"
+   ],
+   "verdict_count": 1
+  },
+  "t3": {
+   "attempts": [
+    "att-example-host-b2-74a342"
+   ],
+   "verdict_count": 1
+  },
+  "t4": {
+   "attempts": [
+    "att-example-host-b3-96240c"
+   ],
+   "verdict_count": 1
+  },
+  "t5": {
+   "attempts": [
+    "att-example-host-b1-177eee"
+   ],
+   "verdict_count": 1
+  },
+  "t6": {
+   "attempts": [
+    "att-example-host-b2-58592d"
+   ],
+   "verdict_count": 1
+  },
+  "t7": {
+   "attempts": [
+    "att-example-host-b3-873d88"
+   ],
+   "verdict_count": 1
+  },
+  "t8": {
+   "attempts": [
+    "att-example-host-a1-4914c5"
+   ],
+   "verdict_count": 1
+  },
+  "t9": {
+   "attempts": [
+    "att-example-host-a2-56c7aa"
+   ],
+   "verdict_count": 1
+  },
+  "t-crash": {
+   "attempts": [
+    "att-example-host-bV-ec2c42",
+    "att-example-host-aH-4fb319"
+   ],
+   "verdict_count": 1
+  }
+ },
+ "ground_truth": {
+  "t1": [
+   "att-example-host-a3-a51083"
+  ],
+  "t2": [
+   "att-example-host-b1-a9277a"
+  ],
+  "t3": [
+   "att-example-host-b2-74a342"
+  ],
+  "t4": [
+   "att-example-host-b3-96240c"
+  ],
+  "t5": [
+   "att-example-host-b1-177eee"
+  ],
+  "t6": [
+   "att-example-host-b2-58592d"
+  ],
+  "t7": [
+   "att-example-host-b3-873d88"
+  ],
+  "t8": [
+   "att-example-host-a1-4914c5"
+  ],
+  "t9": [
+   "att-example-host-a2-56c7aa"
+  ],
+  "t-crash": [
+   "att-example-host-bV-ec2c42",
+   "att-example-host-aH-4fb319"
+  ]
+ },
+ "h2": {
+  "victim_claim_no_verdict": true,
+  "sweep_ran_on_example-host-a": true,
+  "sweep_requeued": [
+   "t-crash.att-example-host-bV-ec2c42"
+  ],
+  "sweep_requeued_exact": true,
+  "orphan_killed_from_example-host-a": true,
+  "sweep_idempotent_second_run": true,
+  "heir_fresh_claim": true,
+  "heir_fixed": true,
+  "exactly_one_final_verdict": true,
+  "dead_attempt_preserved": true,
+  "attempts_countable_from_repo": true,
+  "orphans_left_example-host-b": [],
+  "orphans_left_example-host-a": []
+ },
+ "h1_pass": true,
+ "h2_pass": true,
+ "h3": {
+  "c7_baseline_wall_s": 0.6,
+  "c7_baseline_gen_s": 0.15,
+  "W_contention_s": 0.45,
+  "per_generation_s": 0.049,
+  "ratio_vs_c7": 0.33,
+  "label": "<10x",
+  "per_lane_op_ms": {
+   "local:claim-commit": {
+    "n": 3,
+    "median_ms": 6.3
+   },
+   "local:ls-remote": {
+    "n": 6,
+    "median_ms": 4.2
+   },
+   "local:push-claim": {
+    "n": 3,
+    "median_ms": 14.0
+   },
+   "local:push-return": {
+    "n": 3,
+    "median_ms": 16.0
+   },
+   "local:push-verdict": {
+    "n": 3,
+    "median_ms": 10.9
+   },
+   "ssh:claim-commit": {
+    "n": 6,
+    "median_ms": 6.3
+   },
+   "ssh:ls-remote": {
+    "n": 9,
+    "median_ms": 21.8
+   },
+   "ssh:push-claim": {
+    "n": 6,
+    "median_ms": 39.0
+   },
+   "ssh:push-return": {
+    "n": 6,
+    "median_ms": 38.4
+   },
+   "ssh:push-verdict": {
+    "n": 6,
+    "median_ms": 39.2
+   }
+  }
+ },
+ "verdict": "c-proven-cross-host",
+ "wall_s": 30.5,
+ "driver_finished_at": "2026-09-17T17:11:50+0200"
+}
