@@ -1,0 +1,216 @@
+{
+ "probe": "c8-two-host-claim-cas",
+ "freeze": "experiments/c8/FREEZE-C8.md",
+ "driver_started_at": "2026-09-16T08:18:55+0200",
+ "discarded": true,
+ "disclosed_discarded_runs": [
+  "run1 ~08:05+02:00: AttributeError Audit.att_of_claim (helper dropped in final driver rewrite; call sites kept it) \u2014 died at post-kill snapshot; contention phase had already finished 9/9 wins, all 6 workers done, W=0.48s; victim's tagged child killed by hand after, scratch cleaned, nothing counted",
+  "run2 ~08:09+02:00: AttributeError 'str'.stdout \u2014 Audit.verdicts() called .stdout on srv()'s return (already the stdout string); died at post-kill snapshot again; contention 9/9 wins, W=0.63s; same hand-cleanup. Also found+fixed pre-run3: heir.wait \u2192 hw.wait (latent), and pgrep-over-ssh self-match (remote wrapper shell carries the literal pattern \u2192 would phantom-match orphan scans and self-kill the sweep's kill leg) \u2014 bracket-pattern trick applied to sweep pgrep/kill/verify, orphans_left_example-host-a, kill_leftovers",
+  "run3 ~08:14+02:00: audit for-each-ref --format=%(refname) died \u2014 ssh joins argv and the remote shell eats the parens; all earlier phases ran (contention 9/9 wins W=0.57s; victim_claim_no_verdict True; sweep killed the example-host-b orphan cross-host pids=[1066023] gone=true; sweep2 idempotent; heir done). RUN-FOUND PROTOCOL DEFECT + REPAIR (disclosed, no threshold touched): sweep requeued t4/t6/t9 \u2014 clean-phase return commits had landed but their refs/notes/verdicts annotations were silently lost: git notes is read-modify-write per tree (last writer wins), so the 6-worker note burst dropped 3 of 9. Repair: verdicts moved to CAS-created refs/verdicts/<task> verdict commits (same create-once lease as claims \u2014 cannot lose an update, cannot double-land); audit/dump read verdict messages from refs. Evidence for the discarded run preserved as results_c8_run3_discarded.json; shlex.quote-join applied to every ssh-transported git command"
+ ],
+ "freeze_commit_sha": "3ccfb3a99b0dbf3ed81153601c072352b884f0d5",
+ "freeze_committed_at": "2026-09-16T07:50:17+02:00",
+ "df_example-host-b_pre": "/dev/nvme0n1p3  467G  344G   99G  78% /",
+ "df_example-host-a_pre": "/dev/nvme0n1p3  936G  755G  134G  85% /",
+ "clock_skew_s": 0.288,
+ "no_b_machinery": true,
+ "workers": [
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 1,
+   "losses": 1,
+   "startup_ms": 49.1
+  },
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 2,
+   "losses": 1,
+   "startup_ms": 65.0
+  },
+  {
+   "event": "done",
+   "host": "example-host-b",
+   "lane": "ssh",
+   "idx": 3,
+   "losses": 1,
+   "startup_ms": 39.1
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 1,
+   "losses": 0,
+   "startup_ms": 5.0
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 2,
+   "losses": 1,
+   "startup_ms": 11.3
+  },
+  {
+   "event": "done",
+   "host": "example-host-a",
+   "lane": "local",
+   "idx": 3,
+   "losses": 1,
+   "startup_ms": 6.2
+  }
+ ],
+ "wins_detail": [
+  [
+   {
+    "task": "t2",
+    "att": "att-example-host-b1-a545df",
+    "return": "9fd4b87557149e46ea81281cc4096d8905fdc739",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "b55df9d09c2819e565f7aa789878cbfa6ae330d6",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   },
+   {
+    "task": "t5",
+    "att": "att-example-host-b1-2cbcfc",
+    "return": "686760c661f5d0f5bb2c37a6dbf1c31e3fe22c7a",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "def0f5201e4c59832a6389ade5a5f2b9cbe41802",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t3",
+    "att": "att-example-host-b2-91379b",
+    "return": "c49e43298b404e85480495b1af4b8478766d0df3",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "c4840bb707522385345814a291a6684459fc3024",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t4",
+    "att": "att-example-host-b3-5e709f",
+    "return": "e8cad4c83ccda4dbfc0609487eb0efe95a98b99c",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "967e8fdbcf1136347b6b8eb2c29fdfa94ed18f78",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   },
+   {
+    "task": "t7",
+    "att": "att-example-host-b3-41b96e",
+    "return": "cef5c9bec80d3cb631e6002a29102eb57228814d",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "a8bdbff44d05e43425839fc38e83e01387924d38",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t6",
+    "att": "att-example-host-a1-9ee970",
+    "return": "f15d6e6056193f597366bd842caebb4ad7defd75",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "dcd89d03e70a6cb999676d0c19b13a41bbf2a5c6",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   },
+   {
+    "task": "t1",
+    "att": "att-example-host-a1-51b3f7",
+    "return": "521063490d94c6e03ca35aa4b10a6e1cb6e9a082",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "db14a5f936bedb6846fe16a672afeabf978c50d2",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t8",
+    "att": "att-example-host-a2-bd0d96",
+    "return": "b1a2c47a3b1e4ae0318b0e8bb0116c747637fe0b",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "e7a5f43fcd948e751e674aa10401cb1acce6d4ee",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ],
+  [
+   {
+    "task": "t9",
+    "att": "att-example-host-a3-5ebd3c",
+    "return": "c792e803079cb74b568f8b8533699d2766869d56",
+    "return_pushed": true,
+    "return_rejected": false,
+    "verdict": "db289ad8ba50a00a9b699b4e87a485cb888c5bdf",
+    "verdict_pushed": true,
+    "verdict_retries": 0
+   }
+  ]
+ ],
+ "W_contention_s": 0.69,
+ "wins_sum": 9,
+ "victim_killed_at": "2026-09-16T08:18:58+0200",
+ "post_kill_snapshot": {
+  "claim_value_present": true,
+  "claim_att": "att-example-host-bV-d5a499",
+  "return_ref_absent": true,
+  "verdict_ref_absent": true
+ },
+ "snapshot_att_match": true,
+ "victim_claim_no_verdict": true,
+ "sweep_spawn_cmd": "ssh -o BatchMode=yes example-host-a python3 -u /tmp/c8/c8_worker.py sweep /tmp/c8/coord.git you@example-host-b",
+ "sweep1": {
+  "event": "swept",
+  "requeued": [
+   "t-crash.att-example-host-bV-d5a499"
+  ],
+  "killed_example-host-b": {
+   "c8-t-crash-att-example-host-bV-d5a499": {
+    "pids": [
+     1074098
+    ],
+    "gone": true
+   }
+  },
+  "killed_local": []
+ },
+ "sweep2": {
+  "event": "swept",
+  "requeued": [],
+  "killed_example-host-b": {},
+  "killed_local": []
+ },
+ "heir": {
+  "event": "done",
+  "att": "att-example-host-aH-f01afa",
+  "task": "t-crash",
+  "return_pushed": true,
+  "verdict_pushed": true,
+  "verdict_retries": 0
+ },
+ "discard_reason": "RuntimeError: audit rev-list refs/tasks/t: fatal: ambiguous argument 'refs/tasks/t': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n\nTraceback (most recent call last):\n  File \"home/you/swarmo/experiments/c8/c8_driver.py\", line 393, in main\n    trailer = {t: a.returns_with_trailer(t) for t in tasks}\n  File \"home/you/swarmo/experiments/c8/c8_driver.py\", line 393, in <dictcomp>\n    trailer = {t: a.returns_with_trailer(t) for t in tasks}\n  File \"home/you/swarmo/experiments/c8/c8_driver.py\", line 75, in returns_with_trailer\n    for s in self.srv(\"rev-list\", f\"refs/tasks/{task}\").split():\n  File \"home/you/swarmo/experiments/c8/c8_driver.py\", line 56, in srv\n    raise RuntimeError(f\"audit {' '.join(args[:2])}: {r.stderr[:300]}\")\nRuntimeError: audit rev-list refs/tasks/t: fatal: ambiguous argument 'refs/tasks/t': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n\n",
+ "verdict": "DISCARDED-NOT-COUNTED",
+ "wall_s": 13.7,
+ "driver_finished_at": "2026-09-16T08:19:08+0200"
+}

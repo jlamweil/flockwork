@@ -382,7 +382,7 @@ def main() -> None:
         preserved = {n[len("refs/claims/"):]: sha
                      for n, sha in by_ref.items()
                      if n.startswith("refs/claims/") and "@" in n}
-        tasks = {n[len("refs/tasks/")]: sha for n, sha in by_ref.items()
+        tasks = {n[len("refs/tasks/"):]: sha for n, sha in by_ref.items()
                  if n.startswith("refs/tasks/")}
         verdicts = a.verdicts()
         verdict_count = {t: 1 for t, d in verdicts.items()

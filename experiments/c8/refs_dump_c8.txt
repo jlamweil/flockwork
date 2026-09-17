@@ -1,0 +1,67 @@
+== for-each-ref (all) ==
+refs/claims/t-crash 1a955703be53c994a6b5a5b6bde037fda38b1106
+refs/claims/t-crash@att-example-host-bV-d5a499 0a38743e304a91334c3ad02c00544cb379073a99
+refs/claims/t1 46b74548d56f79ed004f955967b535de783e5dc1
+refs/claims/t2 a3ef87a2c4694670dfda04ec254b4d4570649cfe
+refs/claims/t3 5ade99e98fbd869cdb93635ba1969159f8d77cc5
+refs/claims/t4 5fd85c2a46d198c0fe130104863a4859e8016ff2
+refs/claims/t5 88ae21227985b8b09af2fba34d6386e7420a7842
+refs/claims/t6 9c634953a3498684ba6e9f5fd83aa1805c124bc9
+refs/claims/t7 e9af78f010a5778801705355e4f90f43ed9f0c7c
+refs/claims/t8 922334180bbb3af715495ef22b3b56e672203aee
+refs/claims/t9 14d7ccc97e9c62c1c84b0c874954674355095642
+refs/heads/main 275b4980372e7341e8198521cad92fa07348718f
+refs/tasks/t-crash ce169ce2c78ee1ae1db261645184bc91e6b48def
+refs/tasks/t1 521063490d94c6e03ca35aa4b10a6e1cb6e9a082
+refs/tasks/t2 9fd4b87557149e46ea81281cc4096d8905fdc739
+refs/tasks/t3 c49e43298b404e85480495b1af4b8478766d0df3
+refs/tasks/t4 e8cad4c83ccda4dbfc0609487eb0efe95a98b99c
+refs/tasks/t5 686760c661f5d0f5bb2c37a6dbf1c31e3fe22c7a
+refs/tasks/t6 f15d6e6056193f597366bd842caebb4ad7defd75
+refs/tasks/t7 cef5c9bec80d3cb631e6002a29102eb57228814d
+refs/tasks/t8 b1a2c47a3b1e4ae0318b0e8bb0116c747637fe0b
+refs/tasks/t9 c792e803079cb74b568f8b8533699d2766869d56
+refs/verdicts/t-crash e830f227e38f62c23aa4b62505418b322d558a19
+refs/verdicts/t1 db14a5f936bedb6846fe16a672afeabf978c50d2
+refs/verdicts/t2 b55df9d09c2819e565f7aa789878cbfa6ae330d6
+refs/verdicts/t3 c4840bb707522385345814a291a6684459fc3024
+refs/verdicts/t4 967e8fdbcf1136347b6b8eb2c29fdfa94ed18f78
+refs/verdicts/t5 def0f5201e4c59832a6389ade5a5f2b9cbe41802
+refs/verdicts/t6 dcd89d03e70a6cb999676d0c19b13a41bbf2a5c6
+refs/verdicts/t7 a8bdbff44d05e43425839fc38e83e01387924d38
+refs/verdicts/t8 e7a5f43fcd948e751e674aa10401cb1acce6d4ee
+refs/verdicts/t9 db289ad8ba50a00a9b699b4e87a485cb888c5bdf
+== claim/preservation subjects ==
+refs/claims/t-crash: claim att-example-host-aH-f01afa
+refs/claims/t-crash@att-example-host-bV-d5a499: claim att-example-host-bV-d5a499
+refs/claims/t1: claim att-example-host-a1-51b3f7
+refs/claims/t2: claim att-example-host-b1-a545df
+refs/claims/t3: claim att-example-host-b2-91379b
+refs/claims/t4: claim att-example-host-b3-5e709f
+refs/claims/t5: claim att-example-host-b1-2cbcfc
+refs/claims/t6: claim att-example-host-a1-9ee970
+refs/claims/t7: claim att-example-host-b3-41b96e
+refs/claims/t8: claim att-example-host-a2-bd0d96
+refs/claims/t9: claim att-example-host-a3-5ebd3c
+== verdict refs (messages) ==
+refs/verdicts/t-crash :: verdict | task: t-crash | attempt: att-example-host-aH-f01afa | fixed: true
+refs/verdicts/t1 :: verdict | task: t1 | attempt: att-example-host-a1-51b3f7 | fixed: true
+refs/verdicts/t2 :: verdict | task: t2 | attempt: att-example-host-b1-a545df | fixed: true
+refs/verdicts/t3 :: verdict | task: t3 | attempt: att-example-host-b2-91379b | fixed: true
+refs/verdicts/t4 :: verdict | task: t4 | attempt: att-example-host-b3-5e709f | fixed: true
+refs/verdicts/t5 :: verdict | task: t5 | attempt: att-example-host-b1-2cbcfc | fixed: true
+refs/verdicts/t6 :: verdict | task: t6 | attempt: att-example-host-a1-9ee970 | fixed: true
+refs/verdicts/t7 :: verdict | task: t7 | attempt: att-example-host-b3-41b96e | fixed: true
+refs/verdicts/t8 :: verdict | task: t8 | attempt: att-example-host-a2-bd0d96 | fixed: true
+refs/verdicts/t9 :: verdict | task: t9 | attempt: att-example-host-a3-5ebd3c | fixed: true
+== refs/tasks commit bodies ==
+refs/tasks/t-crash ce169ce2c78ee1ae1db261645184bc91e6b48def :: fix t-crash |  | Task: t-crash | Attempt: att-example-host-aH-f01afa
+refs/tasks/t1 521063490d94c6e03ca35aa4b10a6e1cb6e9a082 :: fix t1 |  | Task: t1 | Attempt: att-example-host-a1-51b3f7
+refs/tasks/t2 9fd4b87557149e46ea81281cc4096d8905fdc739 :: fix t2 |  | Task: t2 | Attempt: att-example-host-b1-a545df
+refs/tasks/t3 c49e43298b404e85480495b1af4b8478766d0df3 :: fix t3 |  | Task: t3 | Attempt: att-example-host-b2-91379b
+refs/tasks/t4 e8cad4c83ccda4dbfc0609487eb0efe95a98b99c :: fix t4 |  | Task: t4 | Attempt: att-example-host-b3-5e709f
+refs/tasks/t5 686760c661f5d0f5bb2c37a6dbf1c31e3fe22c7a :: fix t5 |  | Task: t5 | Attempt: att-example-host-b1-2cbcfc
+refs/tasks/t6 f15d6e6056193f597366bd842caebb4ad7defd75 :: fix t6 |  | Task: t6 | Attempt: att-example-host-a1-9ee970
+refs/tasks/t7 cef5c9bec80d3cb631e6002a29102eb57228814d :: fix t7 |  | Task: t7 | Attempt: att-example-host-b3-41b96e
+refs/tasks/t8 b1a2c47a3b1e4ae0318b0e8bb0116c747637fe0b :: fix t8 |  | Task: t8 | Attempt: att-example-host-a2-bd0d96
+refs/tasks/t9 c792e803079cb74b568f8b8533699d2766869d56 :: fix t9 |  | Task: t9 | Attempt: att-example-host-a3-5ebd3c
