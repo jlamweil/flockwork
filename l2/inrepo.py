@@ -24,6 +24,7 @@ Usage (run from a worker clone of the origin):
   python3 l2/inrepo.py worker NAME [tasks...]   # claim-fix-verify loop
   python3 l2/inrepo.py audit [tasks...]   # read-only H1/H2 over refs
   python3 l2/inrepo.py sweep ORIGIN TASK [ATT]  # archive+free swarm refs
+  python3 l2/inrepo.py reconcile [ORIGIN] [TTL_S]  # sweep stale claims
 """
 
 from __future__ import annotations
@@ -343,11 +344,96 @@ def sweep(origin: str, task: str, att: str | None = None) -> dict:
     }
 
 
+# ---------------------------------------------------------- reconcile
+
+
+def reconcile(origin: str, ttl_s: float | None = None) -> dict:
+    """Detect and recover stale claims: the automation layer over sweep().
+
+    The dogfood batch recovered six environmental deaths by MANUAL sweep;
+    this closes that gap. A task with a live claim whose return+verdict
+    are not both live is INCOMPLETE; if its claim commit is older than
+    ttl_s (lease expiry — must exceed the worst-case dispatch+verify
+    wall), sweep() archives+frees it so the task re-enters open_tasks.
+
+    Safety is by construction, not by timing: return/verdict refs are
+    create-once CAS (L2), so even a mis-timed sweep of a still-running
+    worker's claim cannot produce two verdicts — the loser's pushes are
+    rejected; the cost is one duplicate attempt, never a double write.
+
+    Never touched: healthy tasks (claim+return+verdict live), fresh
+    claims (age <= ttl), and shapes that should not exist (return or
+    verdict with no live claim) or cannot be dated (undateable claim
+    object) — the latter two are flagged as anomalies for the auditor.
+    """
+    if ttl_s is None:
+        ttl_s = float(os.environ.get("SWARM_LEASE_TTL", "1800"))
+    have = {}
+    for ln in git("ls-remote", origin).stdout.splitlines():
+        if ln.strip():
+            sha, ref = ln.split()
+            have[ref] = sha
+    tasks = sorted(
+        r[len("refs/swarm/claims/") :]
+        for r in have
+        if r.startswith("refs/swarm/claims/") and "@" not in r
+    )
+    now = time.time()
+    out = {
+        "origin": origin,
+        "ttl_s": ttl_s,
+        "stale": [],
+        "swept": [],
+        "fresh": [],
+        "healthy": [],
+        "anomalies": [],
+        "errors": [],
+    }
+    for t in tasks:
+        t_ref = f"refs/swarm/tasks/{t}"
+        v_ref = f"refs/swarm/verdicts/{t}"
+        has_t, has_v = t_ref in have, v_ref in have
+        if has_t and has_v:
+            out["healthy"].append(t)
+            continue
+        ts = origin_commit_ts(origin, f"refs/swarm/claims/{t}")
+        if ts is None:
+            out["anomalies"].append(
+                {"task": t, "reason": "claim object undateable; not swept"}
+            )
+            continue
+        age = now - ts
+        if age <= ttl_s:
+            out["fresh"].append(t)
+            continue
+        shape = "+".join(
+            k for k, present in (("claim", True), ("return", has_t), ("verdict", has_v)) if present
+        )
+        out["stale"].append({"task": t, "age_s": round(age, 1), "shape": shape})
+        try:
+            res = sweep(origin, t)
+            out["swept"].append(res["att"])
+        except RuntimeError as e:
+            out["errors"].append({"task": t, "err": str(e)[:200]})
+    # orphan return/verdict refs (no live claim) — flag, never touch
+    for ref in have:
+        for kind in ("tasks", "verdicts"):
+            prefix = f"refs/swarm/{kind}/"
+            if ref.startswith(prefix) and "@" not in ref:
+                t = ref[len(prefix) :]
+                if f"refs/swarm/claims/{t}" not in have:
+                    out["anomalies"].append(
+                        {"task": t, "reason": f"live {kind} ref with no live claim"}
+                    )
+    return out
+
+
 # -------------------------------------------------------------- audit
 
 
-def origin_body(origin: str, ref_or_sha: str) -> str:
-    """Read object body (ref or sha) from origin (ssh://, file://, or local path)."""
+def origin_raw(origin: str, ref_or_sha: str) -> str:
+    """Full `cat-file -p` output of an object, read on the ORIGIN host
+    (T5 law: the auditor's clone may lack freshly pushed objects)."""
     if not ref_or_sha:
         return ""
     origin = origin or os.environ.get("SWARM_ORIGIN", ORIGIN)
@@ -369,19 +455,36 @@ def origin_body(origin: str, ref_or_sha: str) -> str:
                 ref_or_sha,
             ]
         )
-        stdout = r.stdout if ok(r) else ""
-    else:
-        path = origin
-        if origin.startswith("file://"):
-            path = urlparse(origin).path
-        r = git("cat-file", "-p", ref_or_sha, cwd=path)
-        stdout = r.stdout if ok(r) else ""
+        return r.stdout if ok(r) else ""
+    path = origin
+    if origin.startswith("file://"):
+        path = urlparse(origin).path
+    r = git("cat-file", "-p", ref_or_sha, cwd=path)
+    return r.stdout if ok(r) else ""
 
-    if stdout.startswith("tree "):
-        _, sep, message = stdout.partition("\n\n")
+
+def origin_body(origin: str, ref_or_sha: str) -> str:
+    """Read object body (ref or sha) from origin (ssh://, file://, or local path)."""
+    raw = origin_raw(origin, ref_or_sha)
+    if raw.startswith("tree "):
+        _, sep, message = raw.partition("\n\n")
         if sep:
             return message
-    return stdout
+    return raw
+
+
+def origin_commit_ts(origin: str, ref_or_sha: str) -> float | None:
+    """Committer epoch of a commit object, read on the origin host.
+    None when the object is missing/undateable — callers must treat
+    None as 'cannot judge age', never as 'old'."""
+    for ln in origin_raw(origin, ref_or_sha).splitlines():
+        if ln.startswith("committer "):
+            parts = ln.split()
+            try:
+                return float(parts[-2])
+            except (ValueError, IndexError):
+                return None
+    return None
 
 
 def audit(only: list | None = None) -> None:
@@ -445,3 +548,7 @@ if __name__ == "__main__":
         audit(sys.argv[2:] or None)
     elif mode == "sweep":
         sweep(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else None)
+    elif mode == "reconcile":
+        origin = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("SWARM_ORIGIN", ORIGIN)
+        ttl = float(sys.argv[3]) if len(sys.argv) > 3 else None
+        print(json.dumps(reconcile(origin, ttl), indent=1))
