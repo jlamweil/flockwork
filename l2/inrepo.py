@@ -128,7 +128,9 @@ def work_task(worker: str, task: str, att: str) -> dict:
         # a still-live picker TUI twice)
         sh(["bash", "-c",
             "pkill -f 'the-freebuff-runtime --continue' 2>/dev/null; "
-            "sleep 2; true"])
+            "sleep 2; "
+            "pgrep -f 'config/the-freebuff-runtime' >/dev/null || "
+            "rm -f ~/.config/the-freebuff-runtime/freebuff-instance-owner.json; true"])
         try:
             sys.path.insert(0, os.environ.get(
                 "FBCONN_HOME", "/home/you/freebuff-connector"))
@@ -183,9 +185,14 @@ def work_task(worker: str, task: str, att: str) -> dict:
     lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
     r3 = git("push", "-q", lease, ORIGIN,
              f"{v.stdout.strip()}:refs/swarm/verdicts/{task}")
+    oc_err = ""
+    try:
+        oc_err = (oc.stderr or "")[-200:] if oc.returncode else ""
+    except Exception:  # noqa: BLE001 — freebuff path has no oc object
+        oc_err = ""
     return {"event": "attempted", "worker": worker, "task": task,
             "att": att, "fixed": fixed, "pytest_rc": pr.returncode,
-            "oc_rc": oc_rc, "main_push": ok(r1),
+            "oc_rc": oc_rc, "oc_err": oc_err, "main_push": ok(r1),
             "return_pushed": ok(r2), "verdict_pushed": ok(r3)}
 
 
