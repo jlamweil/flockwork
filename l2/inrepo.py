@@ -175,11 +175,13 @@ def work_task(worker: str, task: str, att: str) -> dict:
         oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
         env = dict(os.environ, PWD=tree, OLDPWD=tree)
         try:
+            # SWARM_DISPATCH_TIMEOUT: model-size must fit task-size; a pro
+            # model on a contract test needs >420s (example-host-b finding, round 6)
             oc = sh(
                 [oc_bin, "run", "--pure", "-m", model, brief],
                 cwd=tree,
                 env=env,
-                timeout=420,
+                timeout=int(os.environ.get("SWARM_DISPATCH_TIMEOUT", "600")),
             )
             oc_rc = oc.returncode
         except subprocess.TimeoutExpired:
