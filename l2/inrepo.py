@@ -122,6 +122,13 @@ def work_task(worker: str, task: str, att: str) -> dict:
     #  default  — opencode headless (V4/V6 laws: own git root, $PWD pin)
     oc_rc = 0
     if os.environ.get("SWARM_DISPATCH") == "freebuff":
+        # fbconn recipe step 1 (HOWTO 'Proven takeover recipe'): the
+        # dispatch owns the slot only if no live TUI holder exists —
+        # clear it HERE, inside the recipe (found live: worker raced
+        # a still-live picker TUI twice)
+        sh(["bash", "-c",
+            "pkill -f 'the-freebuff-runtime --continue' 2>/dev/null; "
+            "sleep 2; true"])
         try:
             sys.path.insert(0, os.environ.get(
                 "FBCONN_HOME", "/home/you/freebuff-connector"))
