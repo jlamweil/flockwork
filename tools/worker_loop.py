@@ -168,9 +168,17 @@ def dispatch_and_harvest(
     }
 
 
-def host_verify(ws: str) -> dict:
-    r = subprocess.run(["python3", "-m", "pytest", "-q"], cwd=ws,
-                       capture_output=True, text=True, timeout=120)
+def host_verify(ws: str, timeout_s: int = 120) -> dict:
+    """Host pytest is the verdict oracle. A hung oracle must degrade to
+    an honest row (host_exit 124, fixed will be false), NOT crash the
+    caller after dispatch succeeded — a crash here loses the verdict
+    row and leaves the E2 shape (claim without verdict) for revive."""
+    try:
+        r = subprocess.run(["python3", "-m", "pytest", "-q"], cwd=ws,
+                           capture_output=True, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        return {"host_exit": 124, "host_passed": 0, "host_failed": 0,
+                "host_timeout": True}
     out = r.stdout + r.stderr
     import re
     passed = re.findall(r"(\d+) passed", out)
@@ -179,6 +187,7 @@ def host_verify(ws: str) -> dict:
         "host_exit": r.returncode,
         "host_passed": int(passed[-1]) if passed else 0,
         "host_failed": int(failed[-1]) if failed else 0,
+        "host_timeout": False,
     }
 
 

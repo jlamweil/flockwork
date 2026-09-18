@@ -58,3 +58,23 @@ def test_attempt_id_shape():
     import uuid
     att = "att-" + uuid.uuid4().hex[:8]
     assert att.startswith("att-") and len(att) == 12
+
+
+def test_host_verify_timeout_is_an_honest_row(tmp_path, monkeypatch):
+    """A hung oracle (pytest > timeout) must not crash run_case after a
+    good dispatch: host_verify degrades to host_exit 124 + host_timeout,
+    so the verdict row still lands (fixed=false, requeueable by the
+    error table) instead of leaving claim-without-verdict for revive."""
+    import subprocess as sp
+
+    def fake_run(*a, **k):
+        raise sp.TimeoutExpired(cmd=a[0], timeout=k.get("timeout", 120))
+
+    monkeypatch.setattr(worker_loop.subprocess, "run", fake_run)
+    v = worker_loop.host_verify(str(tmp_path))
+    assert v == {"host_exit": 124, "host_passed": 0, "host_failed": 0,
+                 "host_timeout": True}
+    # and the fixed criterion cannot pass on a timed-out oracle
+    d = {"patch_bytes": 100}
+    fixed = d["patch_bytes"] > 0 and v["host_passed"] > 0 and v["host_failed"] == 0
+    assert fixed is False
