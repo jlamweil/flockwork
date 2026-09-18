@@ -36,8 +36,8 @@ ORIGIN = os.environ.get(
     "SWARM_ORIGIN", "ssh://example-host-a/home/you/swarmo-origin.git")
 
 
-def sh(cmd, cwd=None, inp=None, timeout=600):
-    return subprocess.run(cmd, cwd=cwd, input=inp, text=True,
+def sh(cmd, cwd=None, inp=None, timeout=600, env=None):
+    return subprocess.run(cmd, cwd=cwd, input=inp, text=True, env=env,
                           capture_output=True, timeout=timeout)
 
 
