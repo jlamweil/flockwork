@@ -230,10 +230,18 @@ def audit(only: list | None = None) -> None:
         sha, ref = ln.split()
         have[ref] = sha
 
+    # read object bodies ON the origin host — the auditing clone may not
+    # have objects for refs pushed after its last fetch (caught live:
+    # local cat-file returned empty for T3's fresh claim)
+    _hp = ORIGIN.split("ssh://")[-1]
+    _host, _path = _hp.split("/", 1)
+    _path = "/" + _path          # keep the absolute path (split eats "/")
+
     def body(ref):
         if ref not in have:
             return ""
-        r = git("cat-file", "-p", have[ref])
+        r = sh(["ssh", "-o", "BatchMode=yes", _host,
+                "git", "-C", _path, "cat-file", "-p", have[ref]])
         return r.stdout if ok(r) else ""
 
     tasks = only or sorted(t[len("refs/swarm/specs/"):]
