@@ -1,5 +1,6 @@
 """Seeded swarm task T2: flock release bug (do not fix by hand — this
 file is the task fixture for the swarm lane; workers must fix it)."""
+
 import fcntl
 import os
 
@@ -28,4 +29,4 @@ class FileLock:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        pass  # <-- the bug: must call self.release()
+        self.release()
