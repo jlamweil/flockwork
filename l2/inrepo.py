@@ -280,7 +280,7 @@ def origin_body(origin: str, ref_or_sha: str) -> str:
     """Read object body (ref or sha) from origin (ssh://, file://, or local path)."""
     if not ref_or_sha:
         return ""
-    origin = os.environ.get("SWARM_ORIGIN", origin)
+    origin = origin or os.environ.get("SWARM_ORIGIN", ORIGIN)
     if origin.startswith("ssh://"):
         _hp = origin.split("ssh://")[-1]
         _host, _path = _hp.split("/", 1)
