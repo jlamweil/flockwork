@@ -112,8 +112,17 @@ def claim(worker: str, task: str) -> str | None:
 
 
 def open_tasks() -> list:
-    """Tasks with a spec but no live claim and no return."""
-    have = remote().stdout
+    """Tasks with a spec but no live claim and no return.
+
+    Raises RuntimeError when the origin is unreachable — 'queue empty'
+    and 'cannot see the queue' must not look alike (a worker that
+    can't tell exits silently exactly when it's most needed)."""
+    r = remote()
+    if not ok(r):
+        raise RuntimeError(
+            f"origin unreachable: {(r.stderr or r.stdout or '').strip()[:200]}"
+        )
+    have = r.stdout
     specs, claimed, returned = set(), set(), set()
     for ln in have.splitlines():
         ref = ln.split()[1] if ln.strip() else ""
@@ -130,12 +139,43 @@ def open_tasks() -> list:
 # ------------------------------------------------------------- worker
 
 
+def heirs_count(origin: str, task: str) -> int:
+    """Archived dead attempts for a task — each archive/claims ref is one
+    environmental death already recorded (by reconcile or self-requeue)."""
+    r = git("ls-remote", origin, f"refs/swarm/archive/claims/{task}@*")
+    return sum(1 for ln in r.stdout.splitlines() if ln.strip())
+
+
 def work_task(worker: str, task: str, att: str) -> dict:
-    """Fix + verify + return + verdict. Only called by the claim winner."""
+    """Fix + verify + return + verdict. Only called by the claim winner.
+
+    Carries the frozen c6 requeue rule (experiments/c6/FREEZE.md):
+    an environmental death (dispatch failed leaving no work in the
+    tree — timeout, model/provider death, clone failure) with no heir
+    yet ARCHIVES the dead attempt and frees the claim in the same run,
+    so the task re-enters open_tasks immediately instead of waiting out
+    the reconcile TTL; one heir attempt max, then the honest
+    fixed:false verdict is FINAL. Merit failures (dispatch completed,
+    oracle failed) were always final."""
     tree = tempfile_tree(task)
     r = git("clone", "-q", ORIGIN, tree)
     if not ok(r):
-        return {"task": task, "att": att, "error": f"clone: {r.stderr[:200]}"}
+        ev = {
+            "event": "attempted",
+            "worker": worker,
+            "task": task,
+            "att": att,
+            "env_death": True,
+            "reason": f"clone: {r.stderr[:200]}",
+        }
+        try:
+            swept = sweep(ORIGIN, task)
+            ev["requeued"] = bool(swept["archived"])
+            ev["swept"] = swept["att"] if swept["archived"] else None
+        except RuntimeError as e:
+            ev["requeued"] = False
+            ev["sweep_error"] = str(e)[:200]
+        return ev
     git("-C", tree, "config", "user.email", f"{worker}@swarm")
     git("-C", tree, "config", "user.name", worker)
     # fetch the spec ref, read the brief (verify: line = task oracle)
@@ -203,6 +243,28 @@ def work_task(worker: str, task: str, att: str) -> dict:
             oc_rc = oc.returncode
         except subprocess.TimeoutExpired:
             oc_rc = 124
+    # c6 classification, BEFORE any ref is written: an environmental
+    # death is a dispatch that failed leaving no work in the tree
+    # (124=timeout counts even with partial work — c4 requeued partial
+    # orphan work too). oc_rc!=0 with a populated tree is recorded
+    # honestly and stays merit-final: the conservative side of the
+    # error table (no requeue storms from ambiguous exits).
+    no_changes = git("-C", tree, "status", "--porcelain").stdout.strip() == ""
+    env_death = oc_rc == 124 or (oc_rc != 0 and no_changes)
+    if env_death and heirs_count(ORIGIN, task) < int(
+        os.environ.get("SWARM_HEIR_MAX", "1")
+    ):
+        swept = sweep(ORIGIN, task)
+        return {
+            "event": "attempted",
+            "worker": worker,
+            "task": task,
+            "att": att,
+            "oc_rc": oc_rc,
+            "env_death": True,
+            "requeued": bool(swept["archived"]),
+            "swept": swept["att"] if swept["archived"] else None,
+        }
     # L4 oracle: task-specified verify command, else host pytest in the
     # task dir (first dir under tasks/). bash -lc so example-host-b's pyenv
     # pytest resolves (c6 recipe).
@@ -213,7 +275,9 @@ def work_task(worker: str, task: str, att: str) -> dict:
         if not os.path.isdir(tdir):
             tdir = tree
         pr = sh([sys.executable, "-m", "pytest", "-q"], cwd=tdir)
-    fixed = pr.returncode == 0
+    # an environmental death is never a fix, whatever the oracle says
+    # (heir-exhausted path: the oracle may pass on an unchanged tree)
+    fixed = pr.returncode == 0 and not env_death
     # return commit on main lineage with the att trailer; concurrent
     # workers push main too — on non-FF, rebase onto origin and retry
     git("-C", tree, "add", "-A")
@@ -256,6 +320,8 @@ def work_task(worker: str, task: str, att: str) -> dict:
         "pytest_rc": pr.returncode,
         "oc_rc": oc_rc,
         "oc_err": oc_err,
+        "env_death": env_death,
+        "heir_exhausted": env_death,
         "main_push": ok(r1),
         "return_pushed": ok(r2),
         "verdict_pushed": ok(r3),
@@ -268,10 +334,43 @@ def tempfile_tree(task):
     return tempfile.mkdtemp(prefix=f"inrepo-{task}-")
 
 
-def worker(name: str, only: list | None = None) -> None:
+def worker(name: str, only: list | None = None) -> bool:
+    """Claim-fix-verify loop. Returns True when it gave up on an
+    unreachable origin (SWARM_WORKER_MAX_FAILS consecutive scans,
+    default 3) — a supervised worker must exit honestly distinct from
+    'queue empty, done'. Transient per-task failures are recorded and
+    the loop continues; the failed claim is freed best-effort."""
     done = 0
+    fails = 0
+    max_fails = int(os.environ.get("SWARM_WORKER_MAX_FAILS", "3"))
+    origin = os.environ.get("SWARM_ORIGIN", ORIGIN)
     while True:
-        tasks = [t for t in open_tasks() if not only or t in only]
+        try:
+            tasks = [t for t in open_tasks() if not only or t in only]
+        except RuntimeError as e:
+            fails += 1
+            print(
+                json.dumps(
+                    {
+                        "event": "origin_unreachable",
+                        "worker": name,
+                        "fails": fails,
+                        "err": str(e)[:200],
+                    }
+                ),
+                flush=True,
+            )
+            if fails >= max_fails:
+                print(
+                    json.dumps(
+                        {"event": "worker_gave_up", "worker": name, "completed": done}
+                    ),
+                    flush=True,
+                )
+                return True
+            time.sleep(2)
+            continue
+        fails = 0
         if not tasks:
             break
         task = tasks[0]
@@ -279,13 +378,29 @@ def worker(name: str, only: list | None = None) -> None:
         if att is None:
             time.sleep(1)  # lost race; re-scan
             continue
-        out = work_task(name, task, att)
+        try:
+            out = work_task(name, task, att)
+        except Exception as e:  # noqa: BLE001 — an attempt must never
+            # kill the loop holding its claim; free it best-effort
+            out = {
+                "event": "work_task_error",
+                "worker": name,
+                "task": task,
+                "att": att,
+                "err": repr(e)[:200],
+            }
+            try:
+                sweep(origin, task)
+                out["claim_freed"] = True
+            except Exception:  # noqa: BLE001
+                out["claim_freed"] = False
         done += 1
         print(json.dumps(out), flush=True)
     print(
         json.dumps({"event": "worker_done", "worker": name, "completed": done}),
         flush=True,
     )
+    return False
 
 
 # -------------------------------------------------------------- sweep
@@ -543,7 +658,7 @@ if __name__ == "__main__":
     if mode == "seed":
         seed(sys.argv[2])
     elif mode == "worker":
-        worker(sys.argv[2], sys.argv[3:] or None)
+        sys.exit(1 if worker(sys.argv[2], sys.argv[3:] or None) else 0)
     elif mode == "audit":
         audit(sys.argv[2:] or None)
     elif mode == "sweep":
