@@ -334,3 +334,27 @@ verdicts remain readable for audit.
 `LOOP-2026-09-17.md`), D-HYBRID — B in-host, C cross-host, one
 `att-*` audit trail — is the best verified design, now including real
 workloads.
+
+## 13. Dogfood — the swarm builds swarmo (2026-09-18)
+
+The in-repo lane (§ refs/swarm/*, LOOP round 4) ran its first real
+workload on swarmo's own origin (example-host-a, durable path): 3 backlog
+tasks (doc + seeded-bug), workers on example-host-c (opencode/hpc-glm) and example-host-b
+(opencode/gemini-3.5-flash-lite), freebuff dispatch attempted 6x and
+verdict idle-window-gated (SingletonBusy against an active remote
+session — honest env rows, all @-archived).
+
+| Task | Winner | Verdict |
+|---|---|---|
+| T1-readme-quality | example-host-c att-0482af | true |
+| T2-flock-bug | example-host-b att-e3283d | true (seeded 1/2 → 2/2 pytest) |
+| T3-docstring | example-host-c att-5fe5bb | true |
+
+H1 exactly-once PASS; content verified by hand after the audit
+(DOCS-NODE.md real, README-IMPROVED.md lane-accurate, flock bug fixed).
+Five live findings encoded: sh(env=), nodes-pull-not-scp, zombie-TUI
+gate, remote-session nondisplaceability (freebuff = idle-window
+backend), origin-host audit reads. Record: AUTOWORK-2026-09-18.md.
+
+**Verdict: `swarmo-dogfood-verified`.** The system's first customer was
+itself, and the receipt is in the repo it delivered.
