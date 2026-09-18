@@ -23,6 +23,7 @@ Usage (run from a worker clone of the origin):
   python3 l2/inrepo.py seed SPEC.json     # push spec refs for tasks
   python3 l2/inrepo.py worker NAME [tasks...]   # claim-fix-verify loop
   python3 l2/inrepo.py audit [tasks...]   # read-only H1/H2 over refs
+  python3 l2/inrepo.py sweep ORIGIN TASK [ATT]  # archive+free swarm refs
 """
 
 from __future__ import annotations
@@ -275,6 +276,62 @@ def worker(name: str, only: list | None = None) -> None:
     )
 
 
+# -------------------------------------------------------------- sweep
+
+
+def sweep(origin: str, task: str, att: str | None = None) -> dict:
+    """Archive every live refs/swarm/{claims,tasks,verdicts}/<task> to
+    refs/swarm/archive/<kind>/<task>@<att> and delete the live refs in
+    ONE transaction (push --atomic; L3/c8 @-law). att defaults to the
+    claim commit body's last token. Idempotent: nothing live -> empty
+    lists, no refs written."""
+    have = {}
+    for ln in git("ls-remote", origin).stdout.splitlines():
+        if ln.strip():
+            sha, ref = ln.split()
+            have[ref] = sha
+    live = [
+        (kind, ref, have[ref])
+        for kind in ("claims", "tasks", "verdicts")
+        for ref in (f"refs/swarm/{kind}/{task}",)
+        if ref in have and "@" not in ref
+    ]
+    if not live:
+        return {"task": task, "att": att, "archived": [], "deleted": []}
+    if att is None:
+        cref = f"refs/swarm/claims/{task}"
+        body = origin_body(origin, cref) if cref in have else ""
+        att = body.strip().split()[-1] if body.strip() else "unknown"
+    refspecs = []
+    for kind, ref, sha in live:
+        refspecs.append(f":{ref}")
+        refspecs.append(f"{sha}:refs/swarm/archive/{kind}/{task}@{att}")
+    # push resolves <sha> in the SOURCE repo — sweep may run from a
+    # checkout without the swarm objects, so push through a scratch
+    # lens that fetched exactly the live refs (ssh:// and path origins
+    # both work; the archive+delete itself stays ONE atomic push)
+    scratch = tempfile_tree(f"sweep-{task}")
+    git("init", "-q", "--bare", scratch)
+    fr = git(
+        "fetch",
+        "-q",
+        origin,
+        *[f"+{ref}:{ref}" for _, ref, _ in live],
+        cwd=scratch,
+    )
+    if not ok(fr):
+        raise RuntimeError(f"sweep fetch failed: {fr.stderr.strip()[:300]}")
+    r = git("push", "--atomic", "-q", origin, *refspecs, cwd=scratch)
+    if not ok(r):
+        raise RuntimeError(f"sweep push failed: {r.stderr.strip()[:300]}")
+    return {
+        "task": task,
+        "att": att,
+        "archived": [f"refs/swarm/archive/{k}/{task}@{att}" for k, _, _ in live],
+        "deleted": [ref for _, ref, _ in live],
+    }
+
+
 # -------------------------------------------------------------- audit
 
 
@@ -375,3 +432,5 @@ if __name__ == "__main__":
         worker(sys.argv[2], sys.argv[3:] or None)
     elif mode == "audit":
         audit(sys.argv[2:] or None)
+    elif mode == "sweep":
+        sweep(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else None)
