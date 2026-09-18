@@ -129,8 +129,9 @@ def work_task(worker: str, task: str, att: str) -> dict:
         sh(["bash", "-c",
             "pkill -f 'the-freebuff-runtime --continue' 2>/dev/null; "
             "sleep 2; "
-            "pgrep -f 'config/the-freebuff-runtime' >/dev/null || "
             "rm -f ~/.config/the-freebuff-runtime/freebuff-instance-owner.json; true"])
+        # unconditional rm: a zombie TUI (defunct, kill-0 alive) defeats
+        # any pgrep-based conditional — found live on example-host-d
         try:
             sys.path.insert(0, os.environ.get(
                 "FBCONN_HOME", "/home/you/freebuff-connector"))
