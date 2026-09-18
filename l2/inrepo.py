@@ -24,6 +24,7 @@ Usage (run from a worker clone of the origin):
   python3 l2/inrepo.py worker NAME [tasks...]   # claim-fix-verify loop
   python3 l2/inrepo.py audit [tasks...]   # read-only H1/H2 over refs
 """
+
 from __future__ import annotations
 
 import json
@@ -31,14 +32,21 @@ import os
 import subprocess
 import sys
 import time
+from urllib.parse import urlparse
 
-ORIGIN = os.environ.get(
-    "SWARM_ORIGIN", "ssh://example-host-a/home/you/swarmo-origin.git")
+ORIGIN = os.environ.get("SWARM_ORIGIN", "ssh://example-host-a/home/you/swarmo-origin.git")
 
 
 def sh(cmd, cwd=None, inp=None, timeout=600, env=None):
-    return subprocess.run(cmd, cwd=cwd, input=inp, text=True, env=env,
-                          capture_output=True, timeout=timeout)
+    return subprocess.run(
+        cmd,
+        cwd=cwd,
+        input=inp,
+        text=True,
+        env=env,
+        capture_output=True,
+        timeout=timeout,
+    )
 
 
 def ok(r):
@@ -50,7 +58,8 @@ def git(*args, cwd=None, inp=None):
 
 
 def remote(*args, cwd=None):
-    return git("ls-remote", ORIGIN, *args, cwd=cwd)
+    orig = os.environ.get("SWARM_ORIGIN", ORIGIN)
+    return git("ls-remote", orig, *args, cwd=cwd)
 
 
 def empty_tree():
@@ -58,6 +67,7 @@ def empty_tree():
 
 
 # --------------------------------------------------------------- seed
+
 
 def seed(spec_path: str) -> dict:
     """Push refs/swarm/specs/<task> = root commit carrying the brief."""
@@ -74,13 +84,13 @@ def seed(spec_path: str) -> dict:
 
 # -------------------------------------------------------------- claim
 
+
 def claim(worker: str, task: str) -> str | None:
     """Create-once CAS claim. Returns att id or None (lost/claimed)."""
     att = f"att-{worker}-{os.urandom(3).hex()}"
     c = git("commit-tree", empty_tree(), "-m", f"claim {task} {att}")
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
-    r = git("push", "-q", lease, ORIGIN,
-            f"{c.stdout.strip()}:refs/swarm/claims/{task}")
+    r = git("push", "-q", lease, ORIGIN, f"{c.stdout.strip()}:refs/swarm/claims/{task}")
     return att if ok(r) else None
 
 
@@ -90,15 +100,18 @@ def open_tasks() -> list:
     specs, claimed, returned = set(), set(), set()
     for ln in have.splitlines():
         ref = ln.split()[1] if ln.strip() else ""
-        for bucket, prefix in ((specs, "refs/swarm/specs/"),
-                               (claimed, "refs/swarm/claims/"),
-                               (returned, "refs/swarm/tasks/")):
+        for bucket, prefix in (
+            (specs, "refs/swarm/specs/"),
+            (claimed, "refs/swarm/claims/"),
+            (returned, "refs/swarm/tasks/"),
+        ):
             if ref.startswith(prefix) and "@" not in ref:
-                bucket.add(ref[len(prefix):])
+                bucket.add(ref[len(prefix) :])
     return sorted(specs - claimed - returned)
 
 
 # ------------------------------------------------------------- worker
+
 
 def work_task(worker: str, task: str, att: str) -> dict:
     """Fix + verify + return + verdict. Only called by the claim winner."""
@@ -110,11 +123,15 @@ def work_task(worker: str, task: str, att: str) -> dict:
     git("-C", tree, "config", "user.name", worker)
     # fetch the spec ref, read the brief (verify: line = task oracle)
     git("-C", tree, "fetch", "-q", ORIGIN, f"refs/swarm/specs/{task}")
-    brief = git("-C", tree, "log", "-1", "--format=%B",
-                "FETCH_HEAD").stdout.strip()
-    verify = next((ln[len("verify:"):].strip()
-                   for ln in brief.splitlines()
-                   if ln.startswith("verify:")), None)
+    brief = git("-C", tree, "log", "-1", "--format=%B", "FETCH_HEAD").stdout.strip()
+    verify = next(
+        (
+            ln[len("verify:") :].strip()
+            for ln in brief.splitlines()
+            if ln.startswith("verify:")
+        ),
+        None,
+    )
     # real work: dispatch backend selectable by env.
     #  freebuff — the fbconn PTY driver on the freebuff host (example-host-d):
     #             run_prompt spawns/continues a session and harvests the
@@ -126,31 +143,44 @@ def work_task(worker: str, task: str, att: str) -> dict:
         # dispatch owns the slot only if no live TUI holder exists —
         # clear it HERE, inside the recipe (found live: worker raced
         # a still-live picker TUI twice)
-        sh(["bash", "-c",
-            "pkill -f 'the-freebuff-runtime --continue' 2>/dev/null; "
-            "sleep 2; "
-            "rm -f ~/.config/the-freebuff-runtime/freebuff-instance-owner.json; true"])
+        sh(
+            [
+                "bash",
+                "-c",
+                "pkill -f 'the-freebuff-runtime --continue' 2>/dev/null; "
+                "sleep 2; "
+                "rm -f ~/.config/the-freebuff-runtime/freebuff-instance-owner.json; true",
+            ]
+        )
         # unconditional rm: a zombie TUI (defunct, kill-0 alive) defeats
         # any pgrep-based conditional — found live on example-host-d
         try:
-            sys.path.insert(0, os.environ.get(
-                "FBCONN_HOME", "/home/you/freebuff-connector"))
+            sys.path.insert(
+                0, os.environ.get("FBCONN_HOME", "/home/you/freebuff-connector")
+            )
             from fbconn.api import run_prompt
+
             res = run_prompt(tree, brief, takeover=True)
             oc_rc = 0 if res and res.get("text") else 1
         except Exception as e:  # noqa: BLE001 — record, never crash
-            print(json.dumps({"event": "dispatch_error",
-                              "task": task, "err": repr(e)[:200]}),
-                  flush=True)
+            print(
+                json.dumps(
+                    {"event": "dispatch_error", "task": task, "err": repr(e)[:200]}
+                ),
+                flush=True,
+            )
             oc_rc = 1
     else:
-        model = os.environ.get("SWARM_MODEL",
-                               "hpc-glm/zai-org/GLM-5.3-Flash")
+        model = os.environ.get("SWARM_MODEL", "hpc-glm/zai-org/GLM-5.3-Flash")
         oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
         env = dict(os.environ, PWD=tree, OLDPWD=tree)
         try:
-            oc = sh([oc_bin, "run", "--pure", "-m", model, brief],
-                    cwd=tree, env=env, timeout=420)
+            oc = sh(
+                [oc_bin, "run", "--pure", "-m", model, brief],
+                cwd=tree,
+                env=env,
+                timeout=420,
+            )
             oc_rc = oc.returncode
         except subprocess.TimeoutExpired:
             oc_rc = 124
@@ -164,41 +194,62 @@ def work_task(worker: str, task: str, att: str) -> dict:
         if not os.path.isdir(tdir):
             tdir = tree
         pr = sh([sys.executable, "-m", "pytest", "-q"], cwd=tdir)
-    fixed = (pr.returncode == 0)
+    fixed = pr.returncode == 0
     # return commit on main lineage with the att trailer; concurrent
     # workers push main too — on non-FF, rebase onto origin and retry
     git("-C", tree, "add", "-A")
-    git("-C", tree, "commit", "-q", "--allow-empty", "-m",
-        f"fix {task}\n\nAttempt: {att}")
+    git(
+        "-C",
+        tree,
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        f"fix {task}\n\nAttempt: {att}",
+    )
     r1 = git("-C", tree, "push", "-q", ORIGIN, "HEAD:main")
     if not ok(r1):
         rr = git("-C", tree, "pull", "-q", "--rebase", ORIGIN, "main")
         if ok(rr):
             r1 = git("-C", tree, "push", "-q", ORIGIN, "HEAD:main")
     lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
-    r2 = git("-C", tree, "push", "-q", lease, ORIGIN,
-             f"HEAD:refs/swarm/tasks/{task}")
+    r2 = git("-C", tree, "push", "-q", lease, ORIGIN, f"HEAD:refs/swarm/tasks/{task}")
     # L1 verdict: ROOT commit
     et = empty_tree()
-    v = git("commit-tree", et, "-m",
-            f"verdict\ntask: {task}\nattempt: {att}\n"
-            f"fixed: {'true' if fixed else 'false'}\nhost: {worker}")
+    v = git(
+        "commit-tree",
+        et,
+        "-m",
+        f"verdict\ntask: {task}\nattempt: {att}\n"
+        f"fixed: {'true' if fixed else 'false'}\nhost: {worker}",
+    )
     lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
-    r3 = git("push", "-q", lease, ORIGIN,
-             f"{v.stdout.strip()}:refs/swarm/verdicts/{task}")
+    r3 = git(
+        "push", "-q", lease, ORIGIN, f"{v.stdout.strip()}:refs/swarm/verdicts/{task}"
+    )
     oc_err = ""
     try:
         oc_err = (oc.stderr or "")[-200:] if oc.returncode else ""
     except Exception:  # noqa: BLE001 — freebuff path has no oc object
         oc_err = ""
-    return {"event": "attempted", "worker": worker, "task": task,
-            "att": att, "fixed": fixed, "pytest_rc": pr.returncode,
-            "oc_rc": oc_rc, "oc_err": oc_err, "main_push": ok(r1),
-            "return_pushed": ok(r2), "verdict_pushed": ok(r3)}
+    return {
+        "event": "attempted",
+        "worker": worker,
+        "task": task,
+        "att": att,
+        "fixed": fixed,
+        "pytest_rc": pr.returncode,
+        "oc_rc": oc_rc,
+        "oc_err": oc_err,
+        "main_push": ok(r1),
+        "return_pushed": ok(r2),
+        "verdict_pushed": ok(r3),
+    }
 
 
 def tempfile_tree(task):
     import tempfile
+
     return tempfile.mkdtemp(prefix=f"inrepo-{task}-")
 
 
@@ -211,18 +262,60 @@ def worker(name: str, only: list | None = None) -> None:
         task = tasks[0]
         att = claim(name, task)
         if att is None:
-            time.sleep(1)          # lost race; re-scan
+            time.sleep(1)  # lost race; re-scan
             continue
         out = work_task(name, task, att)
         done += 1
         print(json.dumps(out), flush=True)
-    print(json.dumps({"event": "worker_done", "worker": name,
-                      "completed": done}), flush=True)
+    print(
+        json.dumps({"event": "worker_done", "worker": name, "completed": done}),
+        flush=True,
+    )
 
 
 # -------------------------------------------------------------- audit
 
+
+def origin_body(origin: str, ref_or_sha: str) -> str:
+    """Read object body (ref or sha) from origin (ssh://, file://, or local path)."""
+    if not ref_or_sha:
+        return ""
+    origin = os.environ.get("SWARM_ORIGIN", origin)
+    if origin.startswith("ssh://"):
+        _hp = origin.split("ssh://")[-1]
+        _host, _path = _hp.split("/", 1)
+        _path = "/" + _path
+        r = sh(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                _host,
+                "git",
+                "-C",
+                _path,
+                "cat-file",
+                "-p",
+                ref_or_sha,
+            ]
+        )
+        stdout = r.stdout if ok(r) else ""
+    else:
+        path = origin
+        if origin.startswith("file://"):
+            path = urlparse(origin).path
+        r = git("cat-file", "-p", ref_or_sha, cwd=path)
+        stdout = r.stdout if ok(r) else ""
+
+    if stdout.startswith("tree "):
+        _, sep, message = stdout.partition("\n\n")
+        if sep:
+            return message
+    return stdout
+
+
 def audit(only: list | None = None) -> None:
+    current_origin = os.environ.get("SWARM_ORIGIN", ORIGIN)
     have = {}
     for ln in remote().stdout.splitlines():
         if not ln.strip():
@@ -230,41 +323,45 @@ def audit(only: list | None = None) -> None:
         sha, ref = ln.split()
         have[ref] = sha
 
-    # read object bodies ON the origin host — the auditing clone may not
-    # have objects for refs pushed after its last fetch (caught live:
-    # local cat-file returned empty for T3's fresh claim)
-    _hp = ORIGIN.split("ssh://")[-1]
-    _host, _path = _hp.split("/", 1)
-    _path = "/" + _path          # keep the absolute path (split eats "/")
-
     def body(ref):
         if ref not in have:
             return ""
-        r = sh(["ssh", "-o", "BatchMode=yes", _host,
-                "git", "-C", _path, "cat-file", "-p", have[ref]])
-        return r.stdout if ok(r) else ""
+        return origin_body(current_origin, ref)
 
-    tasks = only or sorted(t[len("refs/swarm/specs/"):]
-                           for t in have if t.startswith("refs/swarm/specs/"))
+    tasks = only or sorted(
+        t[len("refs/swarm/specs/") :] for t in have if t.startswith("refs/swarm/specs/")
+    )
     A = {}
     for t in tasks:
-        att_c = (body(f"refs/swarm/claims/{t}").strip().split()[-1]
-                 if f"refs/swarm/claims/{t}" in have else None)
+        att_c = (
+            body(f"refs/swarm/claims/{t}").strip().split()[-1]
+            if f"refs/swarm/claims/{t}" in have
+            else None
+        )
         vbody = body(f"refs/swarm/verdicts/{t}")
         vd = {}
         for ln in vbody.splitlines():
             if ":" in ln:
                 k, _, val = ln.partition(":")
                 vd[k.strip()] = val.strip()
-        A[t] = {"claimed": att_c,
-                "returned": f"refs/swarm/tasks/{t}" in have,
-                "verdict": vd.get("fixed"),
-                "verdict_att": vd.get("attempt")}
+        A[t] = {
+            "claimed": att_c,
+            "returned": f"refs/swarm/tasks/{t}" in have,
+            "verdict": vd.get("fixed"),
+            "verdict_att": vd.get("attempt"),
+        }
     # H1: every claimed task has return+verdict with matching att
-    h1 = all(d["claimed"] and d["returned"]
-             and d["verdict"] in ("true", "false")
-             and d["verdict_att"] == d["claimed"]
-             for d in A.values()) if A else False
+    h1 = (
+        all(
+            d["claimed"]
+            and d["returned"]
+            and d["verdict"] in ("true", "false")
+            and d["verdict_att"] == d["claimed"]
+            for d in A.values()
+        )
+        if A
+        else False
+    )
     print(json.dumps({"h1_pass": h1, "tasks": A}, indent=1))
 
 
