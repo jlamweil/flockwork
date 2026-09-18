@@ -37,7 +37,7 @@ ORIGIN = os.environ.get(
 
 
 def sh(cmd, cwd=None, inp=None, timeout=600):
-    return subprocess.run(cmd, cwd=cwd, inp=inp, text=True,
+    return subprocess.run(cmd, cwd=cwd, input=inp, text=True,
                           capture_output=True, timeout=timeout)
 
 
@@ -216,6 +216,8 @@ def audit(only: list | None = None) -> None:
         have[ref] = sha
 
     def body(ref):
+        if ref not in have:
+            return ""
         r = git("cat-file", "-p", have[ref])
         return r.stdout if ok(r) else ""
 
