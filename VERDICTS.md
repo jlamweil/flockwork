@@ -304,3 +304,33 @@ clean re-run; every flag in it is asserted in `results_c7.json`.
   attempts_countable_from_repo, race 1-accept, no orphans,
   no_b_machinery); `refs_dump_c7.txt` shows the preserved
   `@att-victim-4f6332` ref beside the heir's live claim.
+
+## 12. c9 — C on real workloads, cross-host (2026-09-18, HQ/example-host-c)
+
+**Probe:** c9 — git ref-CAS coordinating four REAL model repairs
+(opencode edits + host pytest oracle) from example-host-c (GLM-5.3-Flash,
+hpc-glm) and example-host-b (gemini-3.5-flash-lite) against one bare coord repo
+on example-host-a (`~/swarmo-c9-coord.git`). Frozen preregistration:
+`experiments/c9/FREEZE-C9.md`, committed before any run.
+
+| Hypothesis | Frozen threshold | Measured | Verdict |
+|------------|------------------|----------|---------|
+| H1 exactly-once | one live claim/return/verdict per task, atts chain claim→return→verdict, zero orphans | 7/7 flags true (`results_c9.json`); crash-revive + requeue exercised for real, dead refs preserved at `@`-markers | **PASS** |
+| H2 verdict==oracle | every verdict equals independent host pytest on the LIVE return commit | 4/4 match after disclosed repair (below) | **PASS** |
+| H3 host split | measured, not gated | example-host-c:1 / example-host-b:3 (single contest fizzbuzz, example-host-c won the claim) | measured |
+
+**Disclosed repair (one, plumbing-only):** the example-host-b v1 worker ran
+pytest with cwd=repo root instead of the task dir → file-not-found →
+recorded false negatives on three real fixes (common-mode trap also
+present in the first audit draft; both caught by ground-truth re-run
+before counting). Repair: rejudge via the frozen H2 oracle on the
+live return commits, verdict refs swapped in one guarded server
+transaction, poisoned verdicts preserved at
+`refs/verdicts/<task>@v1-poisoned`. No threshold moved; the v1
+verdicts remain readable for audit.
+
+**Verdict: `c-real-workload-cross-host-verified`.** Combined with §11
+(synthetic shape) and the loop rounds (V1–V7 in
+`LOOP-2026-09-17.md`), D-HYBRID — B in-host, C cross-host, one
+`att-*` audit trail — is the best verified design, now including real
+workloads.

@@ -1,0 +1,39 @@
+refs/claims/fizzbuzz-order 50823363d05bbc12eef954536d8ebc77b941502e
+  :: claim att-example-host-c-heir-3aece0
+refs/claims/fizzbuzz-order@att-example-host-c-235655 34f497790526664de9e16bbeae13838f0a1eb3d8
+  :: claim att-example-host-c-235655
+refs/claims/fizzbuzz-order@orphan 19657dcc314341fab4569cdbcffebc83be020cd2
+  :: claim att-example-host-c-794601
+refs/claims/palindrome-edge 7e9d90af49e3e79b1c9aa86addad07007483746c
+  :: claim att-example-host-b-11e2ee
+refs/claims/sort-stability cb155770807f5e1049b6468fd84f5bc2bb22a917
+  :: claim att-example-host-b-28c32e
+refs/claims/sum-off-by-one 552ecddae4d4a6b49f51cdc6d3042c4fbfa29e6e
+  :: claim att-example-host-b-eacf8f
+refs/heads/main fe42bc19798622cf75fea00b38fc9fff2424897f
+refs/tasks/fizzbuzz-order ebdd62d90e5f2d82bc6af1551e107cf6340ec250
+  :: fix fizzbuzz-order |  | Task: fizzbuzz-order | Attempt: att-example-host-c-heir-3aece0 | Fixed: true
+refs/tasks/fizzbuzz-order@att-example-host-c-235655 6124ccecc87282453d42504db4b90e11ab1482dd
+  :: fix fizzbuzz-order |  | Task: fizzbuzz-order | Attempt: att-example-host-c-235655 | Fixed: false
+refs/tasks/palindrome-edge 5a1085931cff2daad782924d82081298e1b7f59d
+  :: fix palindrome-edge |  | Task: palindrome-edge | Attempt: att-example-host-b-11e2ee | Fixed: false
+refs/tasks/sort-stability bb4abe333877d045e5b487a03de6aab30ab0e18f
+  :: fix sort-stability |  | Task: sort-stability | Attempt: att-example-host-b-28c32e | Fixed: false
+refs/tasks/sum-off-by-one 8afc2a30994ddf662dab7175c1b6d3df3ee8f81c
+  :: fix sum-off-by-one |  | Task: sum-off-by-one | Attempt: att-example-host-b-eacf8f | Fixed: false
+refs/verdicts/fizzbuzz-order 2468e93f1861b5c85413f1c6cb67f281b2a26717
+  :: verdict | task: fizzbuzz-order | attempt: att-example-host-c-heir-3aece0 | fixed: true | host: example-host-c-heir
+refs/verdicts/fizzbuzz-order@att-example-host-c-235655 8d96e709da6d030c8f1d24f967279ace5174ec68
+  :: verdict | task: fizzbuzz-order | attempt: att-example-host-c-235655 | fixed: false | host: example-host-c
+refs/verdicts/palindrome-edge e32f39312554c0c90359b263e6f0f1784c00e75e
+  :: verdict | task: palindrome-edge | attempt: att-example-host-b-11e2ee | fixed: true | host: example-host-b-rejudge | note: v1 worker pytest-cwd bug disclosed; oracle re-run on live return commit
+refs/verdicts/palindrome-edge@v1-poisoned d3a8d086db8391a10616b26d2bffa4f864de193e
+  :: verdict | task: palindrome-edge | attempt: att-example-host-b-11e2ee | fixed: false | host: example-host-b
+refs/verdicts/sort-stability 3f9a1e12a81d5dbb617e0eaed46632f425c9613c
+  :: verdict | task: sort-stability | attempt: att-example-host-b-28c32e | fixed: true | host: example-host-b-rejudge | note: v1 worker pytest-cwd bug disclosed; oracle re-run on live return commit
+refs/verdicts/sort-stability@v1-poisoned 13ced8c2c8d29b6e1cacfddb1f2d1d04e5fff729
+  :: verdict | task: sort-stability | attempt: att-example-host-b-28c32e | fixed: false | host: example-host-b
+refs/verdicts/sum-off-by-one 485a6ba35d311f5156d3a925a7b5eff7358e5da7
+  :: verdict | task: sum-off-by-one | attempt: att-example-host-b-eacf8f | fixed: true | host: example-host-b-rejudge | note: v1 worker pytest-cwd bug disclosed; oracle re-run on live return commit
+refs/verdicts/sum-off-by-one@v1-poisoned 20264e9686cc06bb01a2e357f52d87cbc83dba0f
+  :: verdict | task: sum-off-by-one | attempt: att-example-host-b-eacf8f | fixed: false | host: example-host-b

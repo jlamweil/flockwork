@@ -1,0 +1,69 @@
+{
+ "probe": "c9-real-workload-cross-host",
+ "freeze": "experiments/c9/FREEZE-C9.md",
+ "started": "2026-09-18T13:29:06+0200",
+ "refs": [
+  "refs/claims/fizzbuzz-order",
+  "refs/claims/fizzbuzz-order@att-example-host-c-235655",
+  "refs/claims/fizzbuzz-order@orphan",
+  "refs/claims/palindrome-edge",
+  "refs/claims/sort-stability",
+  "refs/claims/sum-off-by-one",
+  "refs/heads/main",
+  "refs/tasks/fizzbuzz-order",
+  "refs/tasks/fizzbuzz-order@att-example-host-c-235655",
+  "refs/tasks/palindrome-edge",
+  "refs/tasks/sort-stability",
+  "refs/tasks/sum-off-by-one",
+  "refs/verdicts/fizzbuzz-order",
+  "refs/verdicts/fizzbuzz-order@att-example-host-c-235655",
+  "refs/verdicts/palindrome-edge",
+  "refs/verdicts/palindrome-edge@v1-poisoned",
+  "refs/verdicts/sort-stability",
+  "refs/verdicts/sort-stability@v1-poisoned",
+  "refs/verdicts/sum-off-by-one",
+  "refs/verdicts/sum-off-by-one@v1-poisoned"
+ ],
+ "h1": {
+  "one_live_claim_per_task": true,
+  "all_tasks_claimed_once": true,
+  "all_tasks_returned_once": true,
+  "return_att_matches_claim": true,
+  "verdicts_one_per_task": true,
+  "verdict_att_matches_claim": true,
+  "h2_all_match": true
+ },
+ "h2": {
+  "fizzbuzz-order": {
+   "host_fixed": true,
+   "verdict_says": "true",
+   "match": true
+  },
+  "palindrome-edge": {
+   "host_fixed": true,
+   "verdict_says": "true",
+   "match": true
+  },
+  "sort-stability": {
+   "host_fixed": true,
+   "verdict_says": "true",
+   "match": true
+  },
+  "sum-off-by-one": {
+   "host_fixed": true,
+   "verdict_says": "true",
+   "match": true
+  }
+ },
+ "h3_host_split": {
+  "example-host-c": 1,
+  "example-host-b": 3
+ },
+ "dead_claim_markers": [
+  "refs/claims/fizzbuzz-order@att-example-host-c-235655",
+  "refs/claims/fizzbuzz-order@orphan"
+ ],
+ "h1_pass": true,
+ "verdict": "c-real-workload-cross-host-verified",
+ "finished": "2026-09-18T13:29:13+0200"
+}

@@ -1,5 +1,18 @@
 # DESIGN-NEXT — swarmo continuation (HQ/example-host-c, 2026-09-17)
 
+**ROUND-1 UPDATE (loop, same day): the §2 lane executed and the design
+question is SETTLED.** See LOOP-2026-09-17.md for the five verifications
+(V1–V5). Headlines: c8 run 5 counted → **c-proven-cross-host** (17/17
+flags, H3 0.33×; VERDICTS §11, example-host-b commit 6c83060); coord repo rescued
+to example-host-a `~/swarmo-c8-coord.git`; worker leg verified END-TO-END on
+example-host-c with two NEW recipe constraints (own-git-root workspace; PWD env
+pinned — opencode anchors by $PWD). §2.1 and §2.2 are DONE; §3's branch
+question resolved as **D-HYBRID** (B in-host, C cross-host, one att-*
+trail — V3-verified joinable). §2.3 resolution: the dead example-host-c lane's
+goal (settle c8) was achieved by the loop itself; the stuck `running`
+row is left for the fleet's own `--resume` reconciliation (owner's
+evening relaunch) — HQ does not mutate live fleet ledgers.
+
 Written after harvesting the complete example-host-b record (experiments c0–c8,
 VERDICTS, NIGHT-SUMMARY, DESIGNS) into this repo. Everything below cites
 existing artifacts; nothing is re-derived. This file proposes only what
