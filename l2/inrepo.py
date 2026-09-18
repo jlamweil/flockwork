@@ -136,7 +136,7 @@ def work_task(worker: str, task: str, att: str) -> dict:
             sys.path.insert(0, os.environ.get(
                 "FBCONN_HOME", "/home/you/freebuff-connector"))
             from fbconn.api import run_prompt
-            res = run_prompt(tree, brief)
+            res = run_prompt(tree, brief, takeover=True)
             oc_rc = 0 if res and res.get("text") else 1
         except Exception as e:  # noqa: BLE001 — record, never crash
             print(json.dumps({"event": "dispatch_error",
