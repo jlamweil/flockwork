@@ -67,6 +67,21 @@ def empty_tree():
     return git("hash-object", "-t", "tree", "/dev/null").stdout.strip()
 
 
+def verdict_body(
+    task: str, att: str, fixed: bool, host: str, oc_rc: int, pytest_rc: int
+) -> str:
+    """Verdict commit message. oc_rc carries the dispatch exit code so the
+    error table applies downstream (124=timeout → environmental/requeue,
+    model-death → requeue+exit, 0 with pytest fail → merit): the refs
+    alone must separate environmental deaths from honest merit failures
+    without hunting the worker's stdout."""
+    return (
+        f"verdict\ntask: {task}\nattempt: {att}\n"
+        f"fixed: {'true' if fixed else 'false'}\nhost: {host}\n"
+        f"oc_rc: {oc_rc}\npytest_rc: {pytest_rc}"
+    )
+
+
 # --------------------------------------------------------------- seed
 
 
@@ -220,11 +235,7 @@ def work_task(worker: str, task: str, att: str) -> dict:
     # L1 verdict: ROOT commit
     et = empty_tree()
     v = git(
-        "commit-tree",
-        et,
-        "-m",
-        f"verdict\ntask: {task}\nattempt: {att}\n"
-        f"fixed: {'true' if fixed else 'false'}\nhost: {worker}",
+        "commit-tree", et, "-m", verdict_body(task, att, fixed, worker, oc_rc, pr.returncode)
     )
     lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
     r3 = git(
