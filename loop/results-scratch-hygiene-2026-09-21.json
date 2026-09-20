@@ -1,7 +1,7 @@
 {
   "verdict": "scratch-hygiene",
   "date": "2026-09-21",
-  "wave": "wave-2 (example-host-b, 01:1x tail session; LOOP-2026-09-21.md addendum)",
+  "wave": "wave-2 (example-host-b, 00:47-00:51 tail session; LOOP-2026-09-21.md addendum)",
   "preregistration_commit": "37a9893",
   "change_point": "tempfile_tree scratch removal only: work_task becomes a thin wrapper (creates the tree, delegates to _work_task(worker, task, att, tree), finally rmtree); sweep's scratch lens removed in a finally around fetch+atomic push; relabel_orphan_archives same per-iteration (continue paths exit through the finally, have-bookkeeping stays success-only). No event shapes, thresholds, or path semantics changed.",
   "H1_defect_exists": {

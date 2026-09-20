@@ -1,7 +1,7 @@
 {
   "verdict": "claim-orphan-sweep",
   "date": "2026-09-21",
-  "wave": "wave-1 (example-host-b, 00:3x-01:0x tail session; LOOP-2026-09-21.md)",
+  "wave": "wave-1 (example-host-b, 00:33-00:45 tail session; LOOP-2026-09-21.md)",
   "preregistration_commit": "cba1d9e",
   "change_point": "audit() only: adds a report-only `claim_orphans` field (live refs/swarm/claims/<t> with no spec ref, namespace-global, \"@\"-filtered); h1 semantics unchanged. Repair action (no code): sweep(\"T\") on the production substrate, att recovered from the claim body. DOCS-NODE hygiene line (non-experimental, disclosed).",
   "finding": {
