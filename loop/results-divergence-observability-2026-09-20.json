@@ -1,0 +1,34 @@
+{
+ "experiment": "divergence-observability-encoded",
+ "date": "2026-09-20",
+ "session": "21:22 checkpoint, example-host-b \u2014 third thread by the loop rule",
+ "thread_source": "09-19 loop addendum finding 2 (detection was manual) + round-6 finding 4 (arg-label trap undocumented)",
+ "defect": "a node committing to local main while the substrate moved is invisible until someone runs a manual comparison \u2014 example-host-b ran 8 local commits ahead unnoticed (2026-09-19)",
+ "fix": "l2/inrepo.py divergence([ORIGIN], cwd) + CLI: read-only local-main vs origin-main comparison (ls-remote, never a fetch); exact ahead/behind via rev-list when the objects are local; None+reason otherwise (fetch named). ls-remote is scoped to the ASKED origin. DOCS-NODE.md: arg-label trap (argv[2] is the worker LABEL, argv[3:] the filter) + divergence hygiene note.",
+ "preregistration_commit": "loop addendum 2 (committed with LOOP-2026-09-20.md before implementation)",
+ "hypotheses": {
+  "H1_command_absent": {
+   "measured": "AttributeError on 4 red tests pre-implementation",
+   "verdict": "confirmed",
+   "falsified": false
+  },
+  "H2_detection_matrix": {
+   "measured": {
+    "in_sync": "0/0",
+    "local_ahead_2": "ahead 2, behind 0 (matches ground truth)",
+    "objects_missing": "ahead/behind None + reason naming the fetch (third-repo setup; the clone-created variant measured 1/1 \u2014 correct for its premise, wrong for this one, test fixed)",
+    "no_local_main": "reason reported, no fabricated counts"
+   },
+   "verdict": "pass",
+   "falsified": false
+  },
+  "H3_no_regression_live": {
+   "measured": "suite 65 -> 69, 0 failures; live probe PRE-push: ahead 1 (the un-pushed preregistration commit \u2014 the tool caught real divergence on its first live run); POST-push: 0/0",
+   "verdict": "pass",
+   "falsified": false
+  }
+ },
+ "effect_size": "deterministic detection: 4/4 scenario matrix correct (in-sync, ahead, objects-missing, no-main); the live run caught a real ahead-1 state within minutes of the tool existing; suite 65 -> 69, 0 regressions. No CI \u2014 exhaustive over the state space of the two-sha comparison.",
+ "verdict": "divergence-observability-encoded",
+ "bounds": "read-only on the substrate; same parallel seam vs the live the-sibling-project lane; no fleet dispatch."
+}
