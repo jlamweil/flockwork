@@ -95,12 +95,12 @@ def test_relabel_refuses_existing_target(origin):
     _git("-C", str(w), "push", "-q", str(o),
          f"{c1}:refs/swarm/archive/claims/T-dupe@att-w8-dupe01")
     _git("-C", str(w), "push", "-q", str(o),
-         f"{c2}:refs/swarm/archive/verdicts/T-dupe@orphan")
+         f"{c2}:refs/swarm/archive/claims/T-dupe@orphan")
     res = inrepo.relabel_orphan_archives(o)
     assert res["relabeled"] == []
     assert res["skipped"], "target exists — must refuse, never overwrite"
     refs = _git("ls-remote", o).stdout
-    assert "refs/swarm/archive/verdicts/T-dupe@orphan" in refs
+    assert "refs/swarm/archive/claims/T-dupe@orphan" in refs
 
 
 def test_sweep_refuses_unreadable_live_claim_body(origin):

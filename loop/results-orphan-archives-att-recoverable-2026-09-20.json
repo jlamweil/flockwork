@@ -1,0 +1,63 @@
+{
+ "experiment": "orphan-archives-att-recoverable",
+ "date": "2026-09-20",
+ "session": "21:22 checkpoint, example-host-b \u2014 second thread by the loop rule (task lists are minimums)",
+ "thread_source": "AUTOWORK-2026-09-18.md audit finding 4, recorded for 'the next sweep/reconcile revision'",
+ "defect": "archive refs whose @-marker is not att-* (@orphan legacy; @unknown still writable by sweep on a transient claim-body read failure) hide the attempt's att from the ref level \u2014 the marker is the only ref-level index (L3/c8 @-law).",
+ "fix": "l2/inrepo.py relabel_orphan_archives(origin) [+ CLI relabel ORIGIN]: recovers the true att from each att-less archive marker's own body, renames in one atomic push (same sha), refuses existing targets, flags unrecoverable bodies. sweep() gate: live claim + no att-* token after one retry -> RuntimeError, live refs untouched; claim-less orphan shape still sweeps to @unknown (round-6 finding 5 zombie law), repairable by relabel later.",
+ "preregistration_commit": "f75b571",
+ "hypotheses": {
+  "H1_defect_exists": {
+   "measured": "pre-fix: no repair function existed (AttributeError); sweep archived @unknown on unreadable claim body, deleting the live refs in the same push (test red); sweep retry: absent",
+   "verdict": "confirmed",
+   "falsified": false
+  },
+  "H2_repair_correctness_live": {
+   "threshold": "2/2 relabeled; true-att refs sha-equal to preregistered 613f524f\u2026/de950a14\u2026; @orphan gone; no other ref moved; audit h1_pass true; second run relabels 0",
+   "measured": {
+    "relabeled": [
+     {
+      "from": "refs/swarm/archive/claims/T1-readme-quality@orphan",
+      "to": "refs/swarm/archive/claims/T1-readme-quality@att-example-host-c-hq-c59a9c",
+      "sha": "613f524faba8842461fb2b8596ddc3c4f984a021"
+     },
+     {
+      "from": "refs/swarm/archive/claims/T2-flock-bug@orphan",
+      "to": "refs/swarm/archive/claims/T2-flock-bug@att-example-host-b-9dff07",
+      "sha": "de950a14bb0e6dc29b0281ec7c2fcd1d61a913dd"
+     }
+    ],
+    "sha_preserved": true,
+    "gone": [
+     "refs/swarm/archive/claims/T1-readme-quality@orphan",
+     "refs/swarm/archive/claims/T2-flock-bug@orphan"
+    ],
+    "added": [
+     "refs/swarm/archive/claims/T1-readme-quality@att-example-host-c-hq-c59a9c",
+     "refs/swarm/archive/claims/T2-flock-bug@att-example-host-b-9dff07"
+    ],
+    "no_unexpected_moves": true,
+    "audit_after": "h1_pass true, 5/5 tasks (T1..T5), run under scp-form origin",
+    "idempotent_run2": {
+     "relabeled": [],
+     "skipped_n": 0
+    }
+   },
+   "verdict": "pass",
+   "falsified": false
+  },
+  "H3_no_regression_gate_holds": {
+   "threshold": "suite green 0 failures; claim-less orphan shape still sweeps to @unknown (gate must not over-refuse)",
+   "measured": {
+    "suite_before": "59 passed",
+    "suite_after": "65 passed, 0 failed",
+    "orphan_shape_guard": "test_sweep_orphan_shape_still_archives_at_unknown green pre- and post-fix"
+   },
+   "verdict": "pass",
+   "falsified": false
+  }
+ },
+ "effect_size": "deterministic: 2/2 live markers repaired with byte-identical shas and exactly-zero collateral ref movement; archive refs recoverable by att at ref level: 13 -> 13 (2 renamed, none lost); suite 59 -> 65, 0 regressions. Exhaustive over the origin's att-less marker population (2 of 2), not a sample; no CI applies.",
+ "verdict": "orphan-archives-att-recoverable",
+ "bounds": "same parallel seam vs the live the-sibling-project lane; no fleet dispatch; repair touched only the two preregistered refs (diff-proven); no threshold or verdict-history edits."
+}

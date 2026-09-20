@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -426,9 +427,30 @@ def sweep(origin: str, task: str, att: str | None = None) -> dict:
     if not live:
         return {"task": task, "att": att, "archived": [], "deleted": []}
     if att is None:
+        # audit finding 4 revision: an archive marker must embed the
+        # true att. When the claim IS live the att is recoverable in
+        # principle — read it, retry once for a transient origin-host
+        # read failure, and REFUSE to archive under a degraded marker
+        # (the same push would delete the refs that carry it). Only the
+        # genuinely claim-less orphan shape keeps @unknown: refusing
+        # there would leave zombie refs blocking the task forever
+        # (round-6 finding 5), and relabel_orphan_archives can repair
+        # the marker later if the att ever surfaces.
         cref = f"refs/swarm/claims/{task}"
-        body = origin_body(origin, cref) if cref in have else ""
-        att = body.strip().split()[-1] if body.strip() else "unknown"
+        att = "unknown"
+        if cref in have:
+            for _ in (1, 2):
+                body = origin_body(origin, cref)
+                cand = body.strip().split()[-1] if body.strip() else ""
+                if cand.startswith("att-"):
+                    att = cand
+                    break
+            if att == "unknown":
+                raise RuntimeError(
+                    f"sweep refused: claim {cref} is live but its body "
+                    "yields no att-* token — archiving would delete the "
+                    "live refs under a degraded marker"
+                )
     refspecs = []
     for kind, ref, sha in live:
         refspecs.append(f":{ref}")
@@ -540,6 +562,63 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
                     out["anomalies"].append(
                         {"task": t, "reason": f"live {kind} ref with no live claim"}
                     )
+    return out
+
+
+# ------------------------------------------------------------- relabel
+
+
+def relabel_orphan_archives(origin: str) -> dict:
+    """Rename archive refs whose @-marker is not att-* to the true att
+    recovered from the object's own body (audit finding 4: the marker
+    is the ref-level index of an attempt; a body-only att is not
+    queryable). Same sha at the new name + delete the old, ONE atomic
+    push per ref. Never overwrites an existing target and never guesses
+    — a ref with no att-* token in its body is skipped and flagged, so
+    a dry-minded caller can rerun relabel after fixing the bodies."""
+    have = {}
+    for ln in git("ls-remote", origin).stdout.splitlines():
+        if ln.strip():
+            sha, ref = ln.split()
+            have[ref] = sha
+    out = {"origin": origin, "relabeled": [], "skipped": [], "errors": []}
+    for ref, sha in sorted(have.items()):
+        m = re.match(r"^(refs/swarm/archive/.+@)(.+)$", ref)
+        if not m or m.group(2).startswith("att-"):
+            continue
+        body = origin_body(origin, ref)
+        att = body.strip().split()[-1] if body.strip() else ""
+        if not att.startswith("att-"):
+            out["skipped"].append(
+                {"ref": ref, "reason": "no att-* token recoverable from body"}
+            )
+            continue
+        new_ref = m.group(1) + att
+        if new_ref in have:
+            out["skipped"].append(
+                {"ref": ref, "reason": f"target {new_ref} already exists"}
+            )
+            continue
+        scratch = tempfile_tree(f"relabel-{att}")
+        git("init", "-q", "--bare", scratch)
+        fr = git("fetch", "-q", origin, f"+{ref}:{ref}", cwd=scratch)
+        if not ok(fr):
+            out["errors"].append(
+                {"ref": ref, "err": f"fetch: {fr.stderr.strip()[:150]}"}
+            )
+            continue
+        r = git(
+            "push", "--atomic", "-q", origin, f"{sha}:{new_ref}", f":{ref}",
+            cwd=scratch,
+        )
+        if not ok(r):
+            out["errors"].append(
+                {"ref": ref, "err": f"push: {r.stderr.strip()[:150]}"}
+            )
+            continue
+        out["relabeled"].append({"from": ref, "to": new_ref, "sha": sha})
+        have[new_ref] = sha
+        del have[ref]
     return out
 
 
@@ -688,3 +767,5 @@ if __name__ == "__main__":
         origin = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("SWARM_ORIGIN", ORIGIN)
         ttl = float(sys.argv[3]) if len(sys.argv) > 3 else None
         print(json.dumps(reconcile(origin, ttl), indent=1))
+    elif mode == "relabel":
+        print(json.dumps(relabel_orphan_archives(sys.argv[2]), indent=1))
