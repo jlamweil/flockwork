@@ -106,13 +106,43 @@ def seed(spec_path: str) -> dict:
 # -------------------------------------------------------------- claim
 
 
-def claim(worker: str, task: str) -> str | None:
-    """Create-once CAS claim. Returns att id or None (lost/claimed)."""
+def claim_detail(worker: str, task: str) -> dict:
+    """Create-once CAS claim with the failure classified. att is None on
+    any failure; rc/stderr let the caller tell a lost race (rc 1,
+    `! [rejected] … (stale info)` — healthy contention, re-scan) from a
+    structurally broken environment (rc 128 not-a-repo / unreachable …
+    — the same honesty the scan side owes: measured 2026-09-20,
+    addendum 4)."""
     att = f"att-{worker}-{os.urandom(3).hex()}"
     c = git("commit-tree", empty_tree(), "-m", f"claim {task} {att}")
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
     r = git("push", "-q", lease, ORIGIN, f"{c.stdout.strip()}:refs/swarm/claims/{task}")
-    return att if ok(r) else None
+    return {"att": att if ok(r) else None, "rc": r.returncode,
+            "stderr": r.stderr or ""}
+
+
+def claim(worker: str, task: str) -> str | None:
+    """Create-once CAS claim. Returns att id or None (lost/claimed)."""
+    return claim_detail(worker, task)["att"]
+
+
+def classify_claim_failure(rc: int, stderr: str) -> str:
+    """'race' = healthy contention (re-scan is correct); 'structural' =
+    the environment is broken (a re-scan spins forever). Two measured
+    race shapes (2026-09-20): `! [rejected] … (stale info)` when the
+    ref existed before the push, and `! [remote rejected]` +
+    `cannot lock ref … reference already exists` when it lands
+    concurrently — the live 2-worker probe caught the second shape
+    minutes after the first shipped. Every unclassified failure is
+    structural, the safe side."""
+    if rc == 1 and (
+        "[rejected]" in stderr
+        or "[remote rejected]" in stderr
+        or "stale info" in stderr
+        or "reference already exists" in stderr
+    ):
+        return "race"
+    return "structural"
 
 
 def open_tasks() -> list:
@@ -346,6 +376,7 @@ def worker(name: str, only: list | None = None) -> bool:
     the loop continues; the failed claim is freed best-effort."""
     done = 0
     fails = 0
+    claim_fails = 0
     max_fails = int(os.environ.get("SWARM_WORKER_MAX_FAILS", "3"))
     origin = os.environ.get("SWARM_ORIGIN", ORIGIN)
     while True:
@@ -367,7 +398,12 @@ def worker(name: str, only: list | None = None) -> bool:
             if fails >= max_fails:
                 print(
                     json.dumps(
-                        {"event": "worker_gave_up", "worker": name, "completed": done}
+                        {
+                            "event": "worker_gave_up",
+                            "worker": name,
+                            "completed": done,
+                            "reason": "origin",
+                        }
                     ),
                     flush=True,
                 )
@@ -386,10 +422,45 @@ def worker(name: str, only: list | None = None) -> bool:
             print(json.dumps(refused), flush=True)
             if refused["event"] == "law_freshness_refusal":
                 return True  # honest distinct exit (CLI: exit 1)
-        att = claim(name, task)
-        if att is None:
-            time.sleep(1)  # lost race; re-scan
+        res = claim_detail(name, task)
+        if res["att"] is None:
+            if classify_claim_failure(res["rc"], res["stderr"]) == "race":
+                time.sleep(1)  # lost race; re-scan
+                continue
+            # structural (not a repo cwd, origin died mid-flight, …):
+            # re-scanning cannot heal it — same contract as the scan
+            # side, the worker stops honestly instead of spinning
+            claim_fails += 1
+            print(
+                json.dumps(
+                    {
+                        "event": "claim_failed",
+                        "worker": name,
+                        "task": task,
+                        "rc": res["rc"],
+                        "err": res["stderr"].strip()[:200],
+                        "claim_fails": claim_fails,
+                    }
+                ),
+                flush=True,
+            )
+            if claim_fails >= max_fails:
+                print(
+                    json.dumps(
+                        {
+                            "event": "worker_gave_up",
+                            "worker": name,
+                            "completed": done,
+                            "reason": "claim",
+                        }
+                    ),
+                    flush=True,
+                )
+                return True
+            time.sleep(1)
             continue
+        att = res["att"]
+        claim_fails = 0  # a healthy claim: the environment works again
         try:
             out = work_task(name, task, att)
         except Exception as e:  # noqa: BLE001 — an attempt must never

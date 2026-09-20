@@ -1,0 +1,49 @@
+{
+  "verdict": "claim-loss-honesty",
+  "date": "2026-09-20",
+  "wave": "wave-4 (example-host-b-swaro, state-conditional; addendum 4)",
+  "preregistration_commit": "ba557c9",
+  "change_point": "claim_detail()/classify_claim_failure() + worker() claim branch (structural counter -> gave_up reason=claim); claim() signature unchanged; origin-path gave_up gains reason=origin for symmetry",
+  "measured_failure_shapes": {
+    "race_ref_existed_before_push": "rc 1  ! [rejected] ... (stale info)",
+    "race_ref_landed_concurrently": "rc 1  ! [remote rejected] + remote: error: cannot lock ref ... reference already exists",
+    "unreachable_origin_at_claim": "rc 128 fatal: '<path>' does not appear to be a git repository",
+    "nonrepo_cwd": "rc 128 fatal: not a git repository (or any of the parent directories)"
+  },
+  "H1_defect_exists": {
+    "status": "confirmed",
+    "evidence": [
+      "worker() treated EVERY claim failure as a lost race: sleep + re-scan forever",
+      "red at ba557c9: the bounded-give-up test consumed its full 120 s subprocess timeout — the spin is live, not theoretical",
+      "asymmetry: open_tasks has had the honest give-up contract since postscript 2; the claim side never got it"
+    ],
+    "falsified_if": "claim failures were already classified or bounded"
+  },
+  "H2_classification_and_bound": {
+    "status": "pass",
+    "matrix": {
+      "classifier_unit_both_race_shapes": true,
+      "classifier_unit_three_structural_incl_hostile_rc1": true,
+      "worker_level_bounded_gave_up_reason_claim_exit1": true,
+      "race_losses_never_count_live_probe": true
+    },
+    "tests": "tools/test_claim_loss.py 4/4",
+    "live_race_probe": {
+      "setup": "2 worker CLI processes, 4 tasks, law-carrier sandbox origin, real claim contention",
+      "result": "4/4 tasks completed (1+3), claim_failed events = 0, both exit 0, loop terminates",
+      "first_run_before_repair": "claim_failed = 1 — the probe FALSIFIED the initial classifier marker set"
+    },
+    "disclosed_amendment": "the initial classifier matched only '[rejected]'/'stale info'; the live probe caught the second race shape ('[remote rejected]' + 'cannot lock ref ... reference already exists') minutes after the first shipped — classifier marker set extended within the preregistered change point, hostile rc-1 rejections stay structural"
+  },
+  "H3_no_regression_live": {
+    "status": "pass",
+    "suite": {"before": 76, "after": 80, "failed": 0},
+    "live": {"worker_cli_probe": {"label": "probe-claimloss", "event": "worker_done", "completed": 0, "exit": 0}},
+    "existing_cli_worker_tests_unchanged": true
+  },
+  "disclosed_process_notes": [
+    "probe faults during diagnosis, all disclosed in addendum 4: an ORIGIN-bind slip (verified zero substrate collateral: ls-remote showed only the five legitimate T1-T5 claims, audit h1_pass true), a bogus 'deleted origin' construction (repo existed), one rc-unchecked intermediate push",
+    "test fault during implementation: the success-path claim test itself set SWARM_ORIGIN after import — the T5 lesson is load-bearing and now asserted in the test's comment"
+  ],
+  "bounds_held": "no fleet dispatch (sandbox stubs + empty real queue); no threshold or verdict-history edits; solve-metrics upstream still 2026-09-17 (not re-fetched this wave, unchanged since 23:2x)"
+}

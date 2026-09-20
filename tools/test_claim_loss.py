@@ -48,6 +48,13 @@ RACE_STDERR = (
     "To /tmp/x/o.git\n ! [rejected]   b19f -> refs/swarm/claims/T (stale info)\n"
     "error: failed to push some refs to '/tmp/x/o.git'"
 )
+# second measured race shape: the ref lands CONCURRENTLY (live 2-worker
+# probe, 2026-09-20) — the remote rejects with a lock conflict
+RACE_CONCURRENT_STDERR = (
+    "remote: error: cannot lock ref 'refs/swarm/claims/T-a': reference already exists\n"
+    "To /tmp/x/o.git\n ! [remote rejected]   ae16 -> refs/swarm/claims/T-a\n"
+    "error: failed to push some refs to '/tmp/x/o.git'"
+)
 UNREACHABLE_STDERR = (
     "fatal: '/tmp/x/vanished.git' does not appear to be a git repository\n"
     "fatal: Could not read from remote repository."
@@ -62,6 +69,7 @@ NONREPO_STDERR = (
 
 def test_classifier_race_vs_structural():
     assert inrepo.classify_claim_failure(1, RACE_STDERR) == "race"
+    assert inrepo.classify_claim_failure(1, RACE_CONCURRENT_STDERR) == "race"
     assert inrepo.classify_claim_failure(128, UNREACHABLE_STDERR) == "structural"
     assert inrepo.classify_claim_failure(128, NONREPO_STDERR) == "structural"
     # hostile: an rc-1 rejection with NO stale-info markers — a push
@@ -81,23 +89,26 @@ def test_claim_detail_reports_rc_and_stderr(tmp_path):
     _git("-C", str(w), "add", "-A")
     _git("-C", str(w), "-c", "user.email=a@b", "-c", "user.name=a",
          "commit", "-qm", "s")
+    # env BEFORE import — ORIGIN binds at module load (the T5 lesson,
+    # violated by a probe earlier tonight; the lesson is load-bearing)
     os.environ["SWARM_ORIGIN"] = str(o)
+    m = _load()
     try:
         # claim from a NON-REPO cwd: commit-tree still runs in w, push
         # runs in the process cwd — structural
         cwd = os.getcwd()
         os.chdir(tmp_path)
         try:
-            d = inrepo.claim_detail("w1", "T")
+            d = m.claim_detail("w1", "T")
         finally:
             os.chdir(cwd)
         assert d["att"] is None
         assert d["rc"] == 128 and "not a git repository" in d["stderr"]
-        assert inrepo.classify_claim_failure(d["rc"], d["stderr"]) == "structural"
+        assert m.classify_claim_failure(d["rc"], d["stderr"]) == "structural"
         # success path unchanged: from the repo cwd the claim lands
         os.chdir(str(w))
         try:
-            d2 = inrepo.claim_detail("w1", "T")
+            d2 = m.claim_detail("w1", "T")
         finally:
             os.chdir(cwd)
         assert d2["att"] and d2["att"].startswith("att-w1-")
