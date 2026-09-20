@@ -115,7 +115,7 @@ def test_permanent_main_rejection_never_verdicts_true(tmp_path):
     assert first["env_death"] is False
     assert first["requeued"] is True and first["reason"] == "main_push_rejected"
     assert second["fixed"] is False and second["main_push"] is False
-    assert second["requeued"] is None  # heir exhausted: final verdict
+    assert second.get("requeued") is None  # heir exhausted: final verdict
     assert events[-1] == {"event": "worker_done", "worker": "wm",
                           "completed": 2}
     # the origin's verdict says fixed:false — never the lie

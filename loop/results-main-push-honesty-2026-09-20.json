@@ -1,0 +1,43 @@
+{
+  "verdict": "main-push-honesty",
+  "date": "2026-09-20",
+  "wave": "wave-5 (example-host-b-swaro, state-conditional; addendum 5)",
+  "preregistration_commit": "33e3f8f",
+  "change_point": "work_task main-push block only: on a main push still failing after the existing rebase retry, requeue per the c6 machinery (heir bounded) instead of pushing a fixed:true verdict the substrate contradicts; heirs exhausted -> final fixed:false verdict via the existing path",
+  "H1_defect_exists": {
+    "status": "confirmed",
+    "evidence": [
+      "red at 33e3f8f: with main permanently rejected (staged pre-receive hook), today's code returned fixed:true + main_push:false + a PUSHED verdict claiming success, one attempt, no requeue",
+      "audit h1 and the ladder would both read that verdict as success while main never received the fix",
+      "precedent: round-6 finding 7 saw a main collision live (resolved manually); the rebase-retry encoded afterward covers one collision, not two"
+    ],
+    "falsified_if": "the code already refused fixed:true with main unpushed"
+  },
+  "H2_honest_completion": {
+    "status": "pass",
+    "matrix": {
+      "permanent_rejection_requeue_plus_heir_bounded": {
+        "attempts": 2,
+        "first": {"fixed": false, "main_push": false, "env_death": false, "requeued": true, "reason": "main_push_rejected"},
+        "second": {"fixed": false, "main_push": false, "requeued": null, "note": "heir exhausted -> final verdict on origin"},
+        "origin_verdict": "fixed: false",
+        "dead_attempt_archived": true,
+        "claim_live_heir_exhausted_shape": true,
+        "open_tasks_after": []
+      },
+      "single_collision_recovers_via_rebase": {"fixed": true, "main_push": true, "completed": 1},
+      "healthy_path_unchanged": "covered by the existing suite (80 pre-existing tests, all green)"
+    },
+    "tests": "tools/test_main_push_honesty.py 2/2",
+    "falsified_if": "any fixed:true with unpushed main post-fix, a missing requeue, or broken heir bounding — none observed"
+  },
+  "H3_no_regression_live": {
+    "status": "pass",
+    "suite": {"before": 80, "after": 82, "failed": 0},
+    "live": {"worker_cli_probe": {"label": "probe-mainpush", "event": "worker_done", "completed": 0, "exit": 0}}
+  },
+  "disclosed_process_notes": [
+    "one test-assertion fix during implementation: the final-verdict dict has no 'requeued' key (only requeue paths set it) — asserted via .get() per the existing policy-test convention; production code unchanged by this fix"
+  ],
+  "bounds_held": "no fleet dispatch (sandbox stubs + empty real queue); no thresholds or verdict-history edits; classification distinction preserved (env_death stays false — the dispatch succeeded, the completion failed)"
+}

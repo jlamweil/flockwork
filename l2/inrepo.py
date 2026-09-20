@@ -329,6 +329,35 @@ def work_task(worker: str, task: str, att: str) -> dict:
         rr = git("-C", tree, "pull", "-q", "--rebase", ORIGIN, "main")
         if ok(rr):
             r1 = git("-C", tree, "push", "-q", ORIGIN, "HEAD:main")
+    if not ok(r1):
+        # the lane's product is main: a fix that never landed is never
+        # a fix, whatever the oracle says (round-6 f7 saw the collision
+        # live; one rebase retry covers one collision, not two). Requeue
+        # per the c6 machinery — heir bounded — instead of pushing a
+        # fixed:true verdict the substrate contradicts.
+        if heirs_count(ORIGIN, task) < int(
+            os.environ.get("SWARM_HEIR_MAX", "1")
+        ):
+            swept = sweep(ORIGIN, task)
+            return {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "fixed": False,
+                "pytest_rc": pr.returncode,
+                "oc_rc": oc_rc,
+                "oc_err": "",
+                "env_death": False,
+                "heir_exhausted": False,
+                "main_push": False,
+                "return_pushed": False,
+                "verdict_pushed": False,
+                "requeued": bool(swept["archived"]),
+                "swept": swept["att"] if swept["archived"] else None,
+                "reason": "main_push_rejected",
+            }
+        fixed = False  # heirs exhausted: final honest verdict below
     lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
     r2 = git("-C", tree, "push", "-q", lease, ORIGIN, f"HEAD:refs/swarm/tasks/{task}")
     # L1 verdict: ROOT commit
