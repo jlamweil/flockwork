@@ -1,0 +1,50 @@
+{
+  "verdict": "worker-law-freshness-gate",
+  "date": "2026-09-20",
+  "wave": "wave-3 (example-host-b-swaro, state-conditional; addendum 3)",
+  "preregistration_commit": "cef97fe",
+  "implementation_commit": "30d7911",
+  "change_point": "law_check()/law_gate() + worker() claim-moment gate in l2/inrepo.py; nothing else moved",
+  "H1_defect_exists": {
+    "status": "confirmed",
+    "evidence": [
+      "red at cef97fe: stale-law worker CLAIMED AND COMPLETED (fixed:true, worker_done, exit 0) where the contract requires refusal",
+      "recorded incidents of the class: round-6 f2 (stale scp-dropped inrepo.py), round-6 f6 (node with no git remote), 09-19 (stale substrate -> false fixed:true on an oc_rc-124 death)",
+      "live catch at 23:4x: law_check vs swarmo-origin read 'stale' on the operator's own checkout while the gate edit was uncommitted (local abe399d vs origin c3a2efa) — unverified law refused before any commit landed; 'match' after the push, both origin forms"
+    ],
+    "falsified_if": "claim-path divergence refusal already existed (it does not)"
+  },
+  "H2_gate_correctness": {
+    "status": "pass",
+    "matrix": {
+      "in_sync_claims_and_completes": true,
+      "stale_law_refuses_before_claiming_exit1_zero_claims": true,
+      "no_published_law_passes_through_crossrepo_solve_shape": true,
+      "nongit_cwd_stale_copy_still_gated": true,
+      "bypass_proceeds_and_records_event": true,
+      "law_check_unit_match_absent_error": true,
+      "law_check_keys_on_running_file_not_cwd": true
+    },
+    "tests": "tools/test_inrepo_lawgate.py 7/7",
+    "red_measured_at_preregistration": "5 failed / 2 passed (the 2 passers are the green-through over-refusal guards)",
+    "falsified_if": "any claim under stale law without bypass, any refusal on match/absent, any bypass without its event — none observed"
+  },
+  "H3_no_regression_live": {
+    "status": "pass",
+    "suite": {"before": 69, "after": 76, "failed": 0},
+    "live": {
+      "law_check_ssh_form": "match abe399d08930",
+      "law_check_scp_form": "match abe399d08930",
+      "worker_cli_probe": {"label": "probe-lawgate", "event": "worker_done", "completed": 0, "exit": 0},
+      "divergence_after_push": "ahead 0, behind 0"
+    },
+    "existing_cli_worker_tests_unchanged": true,
+    "falsified_if": "any pre-existing test failed or the live worker refused on verified-in-sync law — neither observed"
+  },
+  "disclosed_process_notes": [
+    "two test-design corrections during implementation, disclosed: (a) the absent-law classifier needed THREE phrasings (invalid object name 'main' on an empty repo; unknown revision; path ... does not exist in 'main'), discovered by measurement; (b) the law read is exception-guarded (the scp-form lesson: a read failure is a classified state, never a crash) — the error-branch test uses an existing non-repo dir and a vanished path",
+    "red-run find, QUEUED not fixed (scope discipline): worker() claim-loss path spins forever on STRUCTURAL claim failures (non-git cwd -> 'not a git repository' claims in an infinite re-scan loop); the gate removes the stale-law instance; the general spin is a separate defect",
+    "the earlier 300s background pytest hang was a harness pipe artifact (no output produced at all); foreground runs complete in seconds"
+  ],
+  "bounds_held": "no fleet dispatch (sandbox stub dispatch + empty real queue); no threshold or verdict-history edits; parallel seam respected (example-host-b-swaro files only); solve-metrics upstream rechecked live 23:2x — still 2026-09-17, trigger not fired"
+}

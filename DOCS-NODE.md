@@ -26,3 +26,13 @@ this clone's main to the substrate's (read-only; exact counts when the
 objects are local, honest `unknown` + fetch note otherwise). A node
 that commits locally without pushing runs ahead silently — example-host-b ran 8
 commits ahead unnoticed (2026-09-19); check before dispatching work.
+
+Law freshness (2026-09-20): the worker now ENFORCES what divergence
+only reports. Before claiming, `worker` compares the RUNNING
+`l2/inrepo.py` blob to origin main's published copy (read on the origin
+host) and refuses with `law_freshness_refusal` + exit 1 on a mismatch —
+pull (fetch+reset) and rerun. Uncommitted law edits count as stale (an
+unverified law is an unverified law). Origins that publish no
+`l2/inrepo.py` on main (cross-repo task satellites like
+solve-metrics-origin) pass through. `SWARM_ALLOW_DIVERGED=1` bypasses,
+recorded as `law_freshness_bypass` in the event stream — never silent.
