@@ -22,6 +22,9 @@ Laws encoded (from V9-V12):
 Usage (run from a worker clone of the origin):
   python3 l2/inrepo.py seed SPEC.json     # push spec refs for tasks
   python3 l2/inrepo.py worker NAME [tasks...]   # claim-fix-verify loop
+      # the worker refuses to claim while the RUNNING law (this file)
+      # differs from origin main's published copy (law-freshness gate;
+      # SWARM_ALLOW_DIVERGED=1 bypasses, recorded in the event stream)
   python3 l2/inrepo.py audit [tasks...]   # read-only H1/H2 over refs
   python3 l2/inrepo.py sweep ORIGIN TASK [ATT]  # archive+free swarm refs
   python3 l2/inrepo.py reconcile [ORIGIN] [TTL_S]  # sweep stale claims
@@ -375,6 +378,14 @@ def worker(name: str, only: list | None = None) -> bool:
         if not tasks:
             break
         task = tasks[0]
+        # law-freshness gate: judge with the substrate's law or not at
+        # all (round-6 f2/f6, 09-19 — stale law recorded a false
+        # fixed:true; the claim CAS cannot see code versions)
+        refused = law_gate(origin, name, task)
+        if refused is not None:
+            print(json.dumps(refused), flush=True)
+            if refused["event"] == "law_freshness_refusal":
+                return True  # honest distinct exit (CLI: exit 1)
         att = claim(name, task)
         if att is None:
             time.sleep(1)  # lost race; re-scan
@@ -613,6 +624,104 @@ def divergence(origin: str | None = None, cwd=None) -> dict:
         return out
     out["ahead"], out["behind"] = (int(x) for x in r.stdout.split())
     return out
+
+
+# ------------------------------------------------- law freshness gate
+
+
+LAW_PATH = "l2/inrepo.py"
+
+
+def law_check(origin: str) -> dict:
+    """Is the RUNNING lane law the law the origin publishes?
+
+    Workers have repeatedly judged with stale law (round-6 f2: a stale
+    scp-dropped copy; round-6 f6: a node with no git remote; 09-19: a
+    stale substrate — the receipt was a false fixed:true on an
+    environmental death). The claim CAS cannot see code versions, so
+    the check compares the running module file's blob sha against
+    origin main's published copy, read on the ORIGIN host (the node's
+    object store may not hold origin main — the T5 law).
+
+    status:
+      match  — identical bytes, claim allowed
+      stale  — the origin publishes different law: refuse
+      absent — origin main has no law file (cross-repo lanes: the task
+               origin is a satellite; pass-through)
+      error  — unreadable for any other reason: refuse (fail closed;
+               reachability was already established by the scan)
+    """
+    origin = origin or os.environ.get("SWARM_ORIGIN", ORIGIN)
+    out = {
+        "origin": origin,
+        "law_path": LAW_PATH,
+        "local_sha": None,
+        "origin_sha": None,
+        "status": "error",
+        "reason": None,
+    }
+    r = sh(["git", "hash-object", __file__])
+    if not ok(r):
+        out["reason"] = f"local law hash failed: {r.stderr.strip()[:120]}"
+        return out
+    out["local_sha"] = r.stdout.strip()
+    tgt = ssh_target(origin)
+    try:
+        if tgt is not None:
+            _host, _port, _path = tgt
+            cmd = ["ssh", "-o", "BatchMode=yes"]
+            if _port:
+                cmd += ["-p", str(_port)]
+            cmd += [_host, "git", "-C", _path, "rev-parse", f"main:{LAW_PATH}"]
+            r = sh(cmd)
+        else:
+            path = origin
+            if origin.startswith("file://"):
+                path = urlparse(origin).path
+            r = git("rev-parse", f"main:{LAW_PATH}", cwd=path)
+    except Exception as e:  # noqa: BLE001 — an unreadable law is a
+        # verdict for the gate to act on, never a crash (the scp-form
+        # lesson: read failures degrade to classified states)
+        out["reason"] = f"{type(e).__name__}: {e}"[:150]
+        return out
+    if ok(r):
+        out["origin_sha"] = r.stdout.strip()
+        out["status"] = "match" if out["origin_sha"] == out["local_sha"] else "stale"
+        return out
+    err = (r.stderr or "").strip()
+    # absent law: origin main missing entirely (empty repo: "invalid
+    # object name 'main'"), or the law path absent from main ("unknown
+    # revision", "path ... does not exist in 'main'") — no law published
+    if (
+        "invalid object name" in err
+        or "unknown revision" in err
+        or "Not a valid object name" in err
+        or "does not exist in" in err
+    ):
+        out["status"] = "absent"
+        out["reason"] = err[:120]
+        return out
+    out["reason"] = err[:150] or "origin law read failed"
+    return out
+
+
+def law_gate(origin: str, worker_name: str, task: str) -> dict | None:
+    """The claim-moment gate over law_check: None → proceed (match or
+    absent); otherwise the event to print before an honest exit 1.
+    SWARM_ALLOW_DIVERGED=1 proceeds but must be recorded."""
+    law = law_check(origin)
+    if law["status"] in ("match", "absent"):
+        return None
+    event = "law_freshness_bypass"
+    ev = {"event": event, "worker": worker_name, "task": task, "law": law}
+    if os.environ.get("SWARM_ALLOW_DIVERGED") != "1":
+        ev["event"] = "law_freshness_refusal"
+        ev["hint"] = (
+            "nodes pull, never scp (round-6 f2/f6, 09-19 divergence): "
+            "fetch+reset this checkout to origin main and rerun; "
+            "SWARM_ALLOW_DIVERGED=1 proceeds and is recorded"
+        )
+    return ev
 
 
 # ------------------------------------------------------------- relabel

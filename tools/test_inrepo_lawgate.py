@@ -236,7 +236,11 @@ def test_law_check_statuses_match_absent_error(tmp_path):
     d = inrepo.law_check(str(o2))
     assert d["status"] == "absent" and d["origin_sha"] is None
 
-    d = inrepo.law_check(str(tmp_path / "notarepo"))  # exists, not a repo
+    notarepo = tmp_path / "notarepo"
+    notarepo.mkdir()                       # exists, not a git repo
+    d = inrepo.law_check(str(notarepo))
+    assert d["status"] == "error" and d["reason"]
+    d = inrepo.law_check(str(tmp_path / "vanished"))  # path absent entirely
     assert d["status"] == "error" and d["reason"]
 
 
