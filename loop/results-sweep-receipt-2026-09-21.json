@@ -1,7 +1,7 @@
 {
   "verdict": "sweep-receipt",
   "date": "2026-09-21",
-  "wave": "wave-3 micro (example-host-b, 00:53-00:58 tail session; LOOP-2026-09-21.md addendum 2)",
+  "wave": "wave-3 micro (example-host-b, 00:54-00:56 tail session; LOOP-2026-09-21.md addendum 2)",
   "preregistration_commit": "182adb8",
   "change_point": "__main__ sweep branch only: prints sweep()'s returned dict as JSON (indent=1). The atomic push and the sweep() contract are untouched; every other mode unchanged.",
   "finding": "the CLI sweep was the ONLY command that mutates the substrate while printing nothing (audit, open_tasks, reconcile, relabel, divergence all print JSON receipts) — measured live in wave 1, where the repair evidence had to be a ref census",
