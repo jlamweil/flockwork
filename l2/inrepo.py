@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -183,6 +184,11 @@ def heirs_count(origin: str, task: str) -> int:
 def work_task(worker: str, task: str, att: str) -> dict:
     """Fix + verify + return + verdict. Only called by the claim winner.
 
+    Owns the attempt's scratch tree: created here, removed when the
+    attempt ends (any path) — the tree is never read after a return,
+    and an abandoned clone per attempt littered the host (568 dirs
+    measured 2026-09-21). The c6 requeue rule lives in _work_task.
+
     Carries the frozen c6 requeue rule (experiments/c6/FREEZE.md):
     an environmental death (dispatch failed leaving no work in the
     tree — timeout, model/provider death, clone failure) with no heir
@@ -192,6 +198,13 @@ def work_task(worker: str, task: str, att: str) -> dict:
     fixed:false verdict is FINAL. Merit failures (dispatch completed,
     oracle failed) were always final."""
     tree = tempfile_tree(task)
+    try:
+        return _work_task(worker, task, att, tree)
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+
+
+def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     r = git("clone", "-q", ORIGIN, tree)
     if not ok(r):
         ev = {
@@ -571,19 +584,22 @@ def sweep(origin: str, task: str, att: str | None = None) -> dict:
     # lens that fetched exactly the live refs (ssh:// and path origins
     # both work; the archive+delete itself stays ONE atomic push)
     scratch = tempfile_tree(f"sweep-{task}")
-    git("init", "-q", "--bare", scratch)
-    fr = git(
-        "fetch",
-        "-q",
-        origin,
-        *[f"+{ref}:{ref}" for _, ref, _ in live],
-        cwd=scratch,
-    )
-    if not ok(fr):
-        raise RuntimeError(f"sweep fetch failed: {fr.stderr.strip()[:300]}")
-    r = git("push", "--atomic", "-q", origin, *refspecs, cwd=scratch)
-    if not ok(r):
-        raise RuntimeError(f"sweep push failed: {r.stderr.strip()[:300]}")
+    try:
+        git("init", "-q", "--bare", scratch)
+        fr = git(
+            "fetch",
+            "-q",
+            origin,
+            *[f"+{ref}:{ref}" for _, ref, _ in live],
+            cwd=scratch,
+        )
+        if not ok(fr):
+            raise RuntimeError(f"sweep fetch failed: {fr.stderr.strip()[:300]}")
+        r = git("push", "--atomic", "-q", origin, *refspecs, cwd=scratch)
+        if not ok(r):
+            raise RuntimeError(f"sweep push failed: {r.stderr.strip()[:300]}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
     return {
         "task": task,
         "att": att,
@@ -859,23 +875,26 @@ def relabel_orphan_archives(origin: str) -> dict:
             )
             continue
         scratch = tempfile_tree(f"relabel-{att}")
-        git("init", "-q", "--bare", scratch)
-        fr = git("fetch", "-q", origin, f"+{ref}:{ref}", cwd=scratch)
-        if not ok(fr):
-            out["errors"].append(
-                {"ref": ref, "err": f"fetch: {fr.stderr.strip()[:150]}"}
+        try:
+            git("init", "-q", "--bare", scratch)
+            fr = git("fetch", "-q", origin, f"+{ref}:{ref}", cwd=scratch)
+            if not ok(fr):
+                out["errors"].append(
+                    {"ref": ref, "err": f"fetch: {fr.stderr.strip()[:150]}"}
+                )
+                continue
+            r = git(
+                "push", "--atomic", "-q", origin, f"{sha}:{new_ref}", f":{ref}",
+                cwd=scratch,
             )
-            continue
-        r = git(
-            "push", "--atomic", "-q", origin, f"{sha}:{new_ref}", f":{ref}",
-            cwd=scratch,
-        )
-        if not ok(r):
-            out["errors"].append(
-                {"ref": ref, "err": f"push: {r.stderr.strip()[:150]}"}
-            )
-            continue
-        out["relabeled"].append({"from": ref, "to": new_ref, "sha": sha})
+            if not ok(r):
+                out["errors"].append(
+                    {"ref": ref, "err": f"push: {r.stderr.strip()[:150]}"}
+                )
+                continue
+            out["relabeled"].append({"from": ref, "to": new_ref, "sha": sha})
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
         have[new_ref] = sha
         del have[ref]
     return out

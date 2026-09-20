@@ -1,0 +1,35 @@
+{
+  "verdict": "scratch-hygiene",
+  "date": "2026-09-21",
+  "wave": "wave-2 (example-host-b, 01:1x tail session; LOOP-2026-09-21.md addendum)",
+  "preregistration_commit": "37a9893",
+  "change_point": "tempfile_tree scratch removal only: work_task becomes a thin wrapper (creates the tree, delegates to _work_task(worker, task, att, tree), finally rmtree); sweep's scratch lens removed in a finally around fetch+atomic push; relabel_orphan_archives same per-iteration (continue paths exit through the finally, have-bookkeeping stays success-only). No event shapes, thresholds, or path semantics changed.",
+  "H1_defect_exists": {
+    "status": "confirmed",
+    "evidence": [
+      "568 abandoned /tmp/inrepo-* dirs (130 MB) on the host, spanning 2026-09-18 15:04 -> 2026-09-21 00:44; the newest at survey time was the session's own sweep lens",
+      "no rmtree anywhere in the lane (grep measured); every work_task attempt, sweep, relabel, and every full contract-suite run added dirs",
+      "red at 37a9893: 4/4 new tests fail on abandoned dirs — success path leaked the task clone; the env-death requeue path leaked TWO (task tree + sweep lens, the nested leak); sweep leaked the lens; relabel leaked the scratch; all functional assertions passed, the red is purely the leak"
+    ],
+    "falsified_if": "the lane already removed its scratch (it did not)"
+  },
+  "H2_no_leak": {
+    "status": "pass",
+    "tests": "tools/test_inrepo_scratch_hygiene.py 4/4 — zero new /tmp/inrepo-* dirs after: work_task success (fixed true), work_task env-death requeue (requeued true), sweep (archived at true att), relabel repair (@orphan -> true att); functional results byte-identical to pre-hygiene behavior",
+    "live": {
+      "full_suite_run": "89 passed, scratch dir delta 0 across the entire run (previously dozens per run)"
+    },
+    "falsified_if": "any surviving scratch on any path — none observed"
+  },
+  "H3_no_regression": {
+    "status": "pass",
+    "suite": { "before": 85, "after": 89, "failed": 0 },
+    "note": "the policy and main-push tests exercise the requeue paths through the new wrapper (subprocess dispatch stubs) — all green; divergence rechecked at close"
+  },
+  "disclosed_process_notes": [
+    "one no-op line (`tree = tree`) briefly left in the wrapper during editing and removed before commit",
+    "the accumulated 578-dir /tmp litter is removed as the preregistered host-hygiene action AFTER this fix commit, with no lane process live (survey-verified)",
+    "no thresholds or verdict-history edits; no fleet dispatch"
+  ],
+  "bounds_held": "no fleet dispatch; no threshold or verdict-history edits; event contracts unchanged (policy/main-push suites green through the wrapper)"
+}
