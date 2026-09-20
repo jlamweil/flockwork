@@ -565,6 +565,56 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
     return out
 
 
+# ---------------------------------------------------------- divergence
+
+
+def divergence(origin: str | None = None, cwd=None) -> dict:
+    """Node-vs-substrate law (09-19 finding 2): a node that commits to
+    its local main while the substrate moved elsewhere is invisible
+    until someone compares — example-host-b ran 8 local commits ahead unnoticed.
+    Read-only comparison: local main vs origin main by sha (ls-remote,
+    never a fetch). ahead/behind are exact via rev-list when the
+    objects are local; otherwise None + a reason that names the fetch —
+    never a fabricated count."""
+    origin = origin or os.environ.get("SWARM_ORIGIN", ORIGIN)
+    out = {
+        "origin": origin,
+        "local_main": None,
+        "origin_main": None,
+        "ahead": None,
+        "behind": None,
+        "reason": None,
+    }
+    r = git("rev-parse", "--verify", "main", cwd=cwd)
+    if not ok(r):
+        out["reason"] = f"no local main: {r.stderr.strip()[:120]}"
+        return out
+    out["local_main"] = r.stdout.strip()
+    # NOT remote(): that helper reads the env-bound ORIGIN — a divergence
+    # check must compare against the ORIGIN IT IS ASKED ABOUT (a unit test
+    # with a tmp bare origin must never query the fleet substrate)
+    r = git("ls-remote", origin, "main", cwd=cwd)
+    if not ok(r) or not r.stdout.strip():
+        out["reason"] = f"origin main unreadable: {(r.stderr or r.stdout or '')[:150]}"
+        return out
+    out["origin_main"] = r.stdout.split()[0]
+    if out["local_main"] == out["origin_main"]:
+        out["ahead"] = out["behind"] = 0
+        return out
+    r = git(
+        "rev-list", "--left-right", "--count",
+        f"{out['local_main']}...{out['origin_main']}", cwd=cwd,
+    )
+    if not ok(r):
+        out["reason"] = (
+            "origin commits not in local object store — fetch needed for "
+            f"exact counts ({r.stderr.strip()[:120]})"
+        )
+        return out
+    out["ahead"], out["behind"] = (int(x) for x in r.stdout.split())
+    return out
+
+
 # ------------------------------------------------------------- relabel
 
 
@@ -769,3 +819,6 @@ if __name__ == "__main__":
         print(json.dumps(reconcile(origin, ttl), indent=1))
     elif mode == "relabel":
         print(json.dumps(relabel_orphan_archives(sys.argv[2]), indent=1))
+    elif mode == "divergence":
+        print(json.dumps(
+            divergence(sys.argv[2] if len(sys.argv) > 2 else None), indent=1))

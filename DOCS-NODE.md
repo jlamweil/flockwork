@@ -13,3 +13,16 @@ at `refs/claims/<task>@<att>` (survives even `gc.pruneExpire=now`); the sweep
 kills cross-host orphans via `ssh you@example-host-b`, then an heir claims fresh.
 Wallet refill: provider credit refills daily at ~09:00 CEST; a billing death
 ("Insufficient balance") means REQUEUE + session exit — batch after the refill.
+
+inrepo.py CLI arg order (round-6 finding 4, do not "fix" into a bug):
+`worker <LABEL> [tasks...]` — argv[2] is the worker LABEL, argv[3:] is
+the optional task filter. `worker T5-audit-host-reads` names the WORKER
+"T5-audit-host-reads" and claims sorted-first, it does NOT target that
+task; to target, `worker my-label T5-audit-host-reads`. Untargeted
+workers claim sorted-first; the att is the real identity either way.
+
+Substrate hygiene: `python3 l2/inrepo.py divergence [ORIGIN]` — compare
+this clone's main to the substrate's (read-only; exact counts when the
+objects are local, honest `unknown` + fetch note otherwise). A node
+that commits locally without pushing runs ahead silently — example-host-b ran 8
+commits ahead unnoticed (2026-09-19); check before dispatching work.
