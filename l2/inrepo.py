@@ -1062,7 +1062,11 @@ if __name__ == "__main__":
     elif mode == "audit":
         audit(sys.argv[2:] or None)
     elif mode == "sweep":
-        sweep(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else None)
+        print(json.dumps(
+            sweep(sys.argv[2], sys.argv[3],
+                  sys.argv[4] if len(sys.argv) > 4 else None),
+            indent=1,
+        ))
     elif mode == "reconcile":
         origin = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("SWARM_ORIGIN", ORIGIN)
         ttl = float(sys.argv[3]) if len(sys.argv) > 3 else None

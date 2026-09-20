@@ -1,0 +1,33 @@
+{
+  "verdict": "sweep-receipt",
+  "date": "2026-09-21",
+  "wave": "wave-3 micro (example-host-b, 00:53-00:58 tail session; LOOP-2026-09-21.md addendum 2)",
+  "preregistration_commit": "182adb8",
+  "change_point": "__main__ sweep branch only: prints sweep()'s returned dict as JSON (indent=1). The atomic push and the sweep() contract are untouched; every other mode unchanged.",
+  "finding": "the CLI sweep was the ONLY command that mutates the substrate while printing nothing (audit, open_tasks, reconcile, relabel, divergence all print JSON receipts) — measured live in wave 1, where the repair evidence had to be a ref census",
+  "H1_defect_exists": {
+    "status": "confirmed",
+    "evidence": [
+      "red at 182adb8: 2/2 fail — CLI sweep stdout literally empty ('') on a successful repair"
+    ],
+    "falsified_if": "a receipt already printed (it did not)"
+  },
+  "H2_receipt_correct": {
+    "status": "pass",
+    "tests": "tools/test_inrepo_sweep_receipt.py 2/2",
+    "receipt_equals_return": "task, att recovered from the claim body, archived marker with the true att, deleted live ref",
+    "att_override_honored": "caller-supplied att reported in the receipt (att-w1-given)",
+    "repair_byte_identical": "live ref gone, true-att marker present, verified in the same tests",
+    "scope_note": "the production substrate has nothing to sweep (the desired end state), so H2 is contract-level on local origins, as preregistered"
+  },
+  "H3_no_regression": {
+    "status": "pass",
+    "suite": { "before": 89, "after": 91, "failed": 0 },
+    "scratch_delta_full_suite": 0
+  },
+  "disclosed_process_notes": [
+    "companion evidence gathered just before the prereg: live worker probe on the real substrate (probe-tail-0054) — worker_done, completed 0, exit 0, scratch 0->0: the freshly pushed law passes its own freshness gate and wave-2's no-litter law holds on a real invocation",
+    "no thresholds or verdict-history edits; no fleet dispatch"
+  ],
+  "bounds_held": "no fleet dispatch; no threshold or verdict-history edits; observability only"
+}
