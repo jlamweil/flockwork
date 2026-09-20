@@ -27,6 +27,17 @@ objects are local, honest `unknown` + fetch note otherwise). A node
 that commits locally without pushing runs ahead silently — example-host-b ran 8
 commits ahead unnoticed (2026-09-19); check before dispatching work.
 
+Claim-orphan hygiene (2026-09-21): the claim-CAS namespace accepts any
+ref name, so a claim for a spec-less task can land via an env-bind slip
+and audit's h1 (spec-keyed) passes over it. `audit` now reports
+`claim_orphans` (report-only; h1 unchanged). `reconcile` TTL-sweeps the
+shape as a backstop; `sweep` is the immediate repair and its archive
+marker carries the claim body's true att. Probe/test work must
+re-verify substrate cleanliness AFTER the last run of the batch, not
+once per batch — the wave-4 test fault landed `claims/T` on production
+after that batch's cleanliness check (repaired 2026-09-21:
+archive/claims/T@att-w1-3b4d61).
+
 Law freshness (2026-09-20): the worker now ENFORCES what divergence
 only reports. Before claiming, `worker` compares the RUNNING
 `l2/inrepo.py` blob to origin main's published copy (read on the origin

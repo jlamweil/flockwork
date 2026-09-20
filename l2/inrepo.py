@@ -1009,7 +1009,29 @@ def audit(only: list | None = None) -> None:
         if A
         else False
     )
-    print(json.dumps({"h1_pass": h1, "tasks": A}, indent=1))
+    # claim-orphan observability (2026-09-21): the claim-CAS namespace
+    # accepts any ref name, so a claim for a spec-less task can land via
+    # an env-bind slip and sit invisible here (audit is spec-keyed).
+    # REPORT-ONLY: h1 stays the per-spec invariant; reconcile remains the
+    # TTL backstop, sweep the repair (marker carries the claim's true att).
+    spec_tasks = {
+        t[len("refs/swarm/specs/") :]
+        for t in have
+        if t.startswith("refs/swarm/specs/")
+    }
+    claim_orphans = sorted(
+        r[len("refs/swarm/claims/") :]
+        for r in have
+        if r.startswith("refs/swarm/claims/")
+        and "@" not in r
+        and r[len("refs/swarm/claims/") :] not in spec_tasks
+    )
+    print(
+        json.dumps(
+            {"h1_pass": h1, "claim_orphans": claim_orphans, "tasks": A},
+            indent=1,
+        )
+    )
 
 
 if __name__ == "__main__":

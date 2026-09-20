@@ -1,0 +1,61 @@
+{
+  "verdict": "claim-orphan-sweep",
+  "date": "2026-09-21",
+  "wave": "wave-1 (example-host-b, 00:3x-01:0x tail session; LOOP-2026-09-21.md)",
+  "preregistration_commit": "cba1d9e",
+  "change_point": "audit() only: adds a report-only `claim_orphans` field (live refs/swarm/claims/<t> with no spec ref, namespace-global, \"@\"-filtered); h1 semantics unchanged. Repair action (no code): sweep(\"T\") on the production substrate, att recovered from the claim body. DOCS-NODE hygiene line (non-experimental, disclosed).",
+  "finding": {
+    "ref": "refs/swarm/claims/T",
+    "commit": "80ab41d",
+    "landed": "2026-09-20 23:51:21 +0200",
+    "body": "claim T att-w1-3b4d61",
+    "provenance": "success-path claim of tools/test_claim_loss.py::test_claim_detail_reports_rc_and_stderr pushed to the DEFAULT REAL ORIGIN — the wave-4 disclosed test fault (SWARM_ORIGIN set after import; the T5 lesson). The wave-4 disclosure recorded it as a test-quality lesson; the batch's 'zero substrate collateral' ls-remote check predates this landing and was never repeated; the night close's 'probe litter cleaned' was false for this ref.",
+    "detection_gap": "audit is spec-keyed: h1 passed with the orphan live for ~50+ minutes (00:4x survey audit: h1_pass true, no orphan field, claims/T on the origin)."
+  },
+  "H1_defect_exists": {
+    "status": "confirmed",
+    "evidence": [
+      "live audit at 00:4x: h1_pass true over T1-T5 while refs/swarm/claims/T (no spec) sat on the origin — the shape is invisible to the gate",
+      "red at cba1d9e: all 3 new contract tests KeyError on 'claim_orphans'"
+    ],
+    "falsified_if": "audit already reported claim-orphans (it did not)"
+  },
+  "H2_detection_and_repair": {
+    "status": "pass",
+    "contract": {
+      "tests": "tools/test_inrepo_claim_orphan.py 3/3",
+      "orphans_reported_sorted": true,
+      "healthy_claims_never_listed": true,
+      "at_marker_filtered": "refs/swarm/claims/T-att@att-w1-zzz seeded, never listed",
+      "report_only": "h1_pass stays true with orphans present",
+      "namespace_global": "orphans reported even when `only` narrows the task table",
+      "sweep_marker_true": "sweep('T-orphan') archived at @att-w1-bbbb (att from the claim body), live ref freed, audit then lists the remaining orphan only"
+    },
+    "live": {
+      "pre_sweep_audit": {
+        "h1_pass": true,
+        "claim_orphans": ["T"],
+        "tasks": ["T1-readme-quality", "T2-flock-bug", "T3-docstring", "T4-sweep-command", "T5-audit-host-reads"]
+      },
+      "sweep": "rc 0; substrate census after: main + 45 archive receipts (44 + the new one) + exactly the 5x4 healthy quads — one ref deleted, one added, nothing else moved",
+      "post_sweep_audit": {
+        "h1_pass": true,
+        "claim_orphans": [],
+        "tasks_byte_identical_to_pre": true
+      },
+      "receipt": "refs/swarm/archive/claims/T@att-w1-3b4d61"
+    },
+    "falsified_if": "any wrong list, an h1 flip, a degraded marker, or any T1-T5 ref movement — none observed"
+  },
+  "H3_no_regression": {
+    "status": "pass",
+    "suite": { "before": 82, "after": 85, "failed": 0 },
+    "divergence": "checked post-push (see ledger close)"
+  },
+  "disclosed_process_notes": [
+    "the red itself had a bug, fixed BEFORE the red commit: the sweep test asserted `\"refs/swarm/claims/T-orphan\" not in refs` — a substring of the still-live T-orphan-b line; re-asserted as an exact-ref set membership (the sweep itself had already worked: att recovered, live ref gone)",
+    "the sweep CLI discards sweep()'s result dict (rc-only); the substrate ref census is the evidence of the archive+delete",
+    "no thresholds or verdict-history edits; h1 semantics unchanged (report-only orphan field); no fleet dispatch; solve-metrics upstream rechecked 00:4x — still 2026-09-17"
+  ],
+  "bounds_held": "no fleet dispatch (local bare origins + the one sanctioned substrate sweep); no threshold or verdict-history edits; h1 gate untouched"
+}
