@@ -546,30 +546,51 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
 # -------------------------------------------------------------- audit
 
 
+def ssh_target(origin: str):
+    """(host, port, path) for ssh-origin reads, or None for non-ssh.
+
+    git plumbing accepts both `ssh://[user@]host[:port]/path` and the
+    scp-form `[user@]host:path` — but origin-host body reads build an
+    ssh COMMAND from the URL, and only knowing ssh:// meant the
+    documented scp-form (`SWARM_ORIGIN=you@example-host-a:solve-metrics-origin.git`,
+    the 09-19 addendum's claim line) fell through to the local-path
+    branch and crashed every origin_body/origin_commit_ts read with
+    FileNotFoundError (cwd = the literal URL string). scp-form paths
+    stay verbatim after the colon: relative to the remote HOME, where
+    the non-interactive ssh shell starts."""
+    if origin.startswith("ssh://"):
+        u = urlparse(origin)
+        host = u.hostname
+        if u.username:
+            host = f"{u.username}@{host}"
+        path = u.path
+        if not path.startswith("/"):
+            path = "/" + path
+        return host, u.port, path
+    if origin.startswith("file://") or origin.startswith("/"):
+        return None
+    if "://" in origin:
+        return None
+    host, sep, path = origin.partition(":")
+    if sep and host and path and "/" not in host:
+        return host, None, path
+    return None
+
+
 def origin_raw(origin: str, ref_or_sha: str) -> str:
     """Full `cat-file -p` output of an object, read on the ORIGIN host
     (T5 law: the auditor's clone may lack freshly pushed objects)."""
     if not ref_or_sha:
         return ""
     origin = origin or os.environ.get("SWARM_ORIGIN", ORIGIN)
-    if origin.startswith("ssh://"):
-        _hp = origin.split("ssh://")[-1]
-        _host, _path = _hp.split("/", 1)
-        _path = "/" + _path
-        r = sh(
-            [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                _host,
-                "git",
-                "-C",
-                _path,
-                "cat-file",
-                "-p",
-                ref_or_sha,
-            ]
-        )
+    tgt = ssh_target(origin)
+    if tgt is not None:
+        _host, _port, _path = tgt
+        cmd = ["ssh", "-o", "BatchMode=yes"]
+        if _port:
+            cmd += ["-p", str(_port)]
+        cmd += [_host, "git", "-C", _path, "cat-file", "-p", ref_or_sha]
+        r = sh(cmd)
         return r.stdout if ok(r) else ""
     path = origin
     if origin.startswith("file://"):

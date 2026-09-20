@@ -1,0 +1,89 @@
+{
+ "experiment": "scp-form-origin-reads",
+ "date": "2026-09-20",
+ "session": "21:22 checkpoint, example-host-b (parallel seam vs live the-sibling-project lane)",
+ "thread_source": "09-19 loop addendum finding 1 (commit 3b2d9f7)",
+ "defect": "origin_raw() scheme dispatch: scp-form SWARM_ORIGIN (the documented claim form) fell to the local-path branch; git cat-file ran with cwd=<URL string> -> FileNotFoundError. Inherited by origin_body (audit, sweep att-recovery) and origin_commit_ts (reconcile dating, uncaught).",
+ "fix": "l2/inrepo.py ssh_target(): one normalization mapping ssh://[user@]host[:port]/path AND scp-form [user@]host:path to (host, port, path) for ssh construction; local path and file:// branches unchanged; no other lane path touched.",
+ "preregistration_commit": "c01cb37",
+ "hypotheses": {
+  "H1_causal_crash": {
+   "prediction": "pre-fix scp-form read raises FileNotFoundError; ssh:// form reads the same object",
+   "measured": "FileNotFoundError [Errno 2] No such file or directory: 'you@example-host-a:solve-metrics-origin.git'; ssh:// control read claim body (att-example-host-d-heir-8bcd83)",
+   "verdict": "confirmed",
+   "falsified": false
+  },
+  "H2_parity": {
+   "threshold": "5/5 refs byte-identical AND audit h1_pass true with fields equal under both forms AND reconcile completes without uncaught exception",
+   "measured": {
+    "parity_probes": [
+     {
+      "ref": "refs/swarm/specs/verify-daily-artifact-2026-09-17",
+      "byte_identical": true,
+      "len_scp": 3162,
+      "len_ssh": 3162
+     },
+     {
+      "ref": "refs/swarm/claims/verify-daily-artifact-2026-09-17",
+      "byte_identical": true,
+      "len_scp": 209,
+      "len_ssh": 209
+     },
+     {
+      "ref": "refs/swarm/tasks/verify-daily-artifact-2026-09-17",
+      "byte_identical": true,
+      "len_scp": 295,
+      "len_ssh": 295
+     },
+     {
+      "ref": "refs/swarm/verdicts/verify-daily-artifact-2026-09-17",
+      "byte_identical": true,
+      "len_scp": 281,
+      "len_ssh": 281
+     },
+     {
+      "ref": "refs/heads/main",
+      "byte_identical": true,
+      "len_scp": 413,
+      "len_ssh": 413
+     }
+    ],
+    "parity_count": "5/5",
+    "audit_swarmo_origin": {
+     "scp_h1_pass": true,
+     "ssh_h1_pass": true,
+     "fields_equal": true,
+     "n_tasks": 2,
+     "rc": [
+      0,
+      0
+     ]
+    },
+    "reconcile_solve_origin": {
+     "crashed": false,
+     "errors": [],
+     "healthy": [
+      "verify-daily-artifact-2026-09-17"
+     ],
+     "stale": [],
+     "anomalies": []
+    }
+   },
+   "verdict": "pass",
+   "falsified": false
+  },
+  "H3_no_regression": {
+   "threshold": "all 53 pre-green tests pass, 0 failures, new scp-form tests pass",
+   "measured": {
+    "suite_before": "53 passed",
+    "suite_after": "59 passed, 0 failed",
+    "new_tests": 6
+   },
+   "verdict": "pass",
+   "falsified": false
+  }
+ },
+ "effect_size": "deterministic parity: 5/5 byte-identical origin-host reads across every documented ref class on solve-metrics-origin; audit payload equality on swarmo-origin (2 tasks); suite delta 53->59, 0 regressions. Probes are exhaustive over the documented origin forms and live ref classes, not a sample; no CI applies.",
+ "verdict": "scp-form-origin-reads-parity",
+ "bounds": "no fleet dispatch (worker dispatch belongs to a loop session with an open entry; solve queue empty); no pushes to solve/the-sibling-project lanes; parallel-seam discipline vs the live the-sibling-project session held (disjoint repos/files)."
+}
