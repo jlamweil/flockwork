@@ -368,8 +368,51 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # an environmental death is never a fix, whatever the oracle says
     # (heir-exhausted path: the oracle may pass on an unchanged tree)
     fixed = pr.returncode == 0 and not env_death
+    if not fixed:
+        # c6 law, third clause (wave-3 2026-09-21): a change that FAILS
+        # its oracle is never a fix and never lands. Publishing used to
+        # be unconditional — a merit failure add'ed + committed + pushed
+        # its tree and THEN wrote fixed:false, so main could carry
+        # changes no verdict claims (the inverse of ba42841, the empty
+        # commit found live in wave 2 on the env-death path). Merit
+        # failure is FINAL: main and refs/swarm/tasks stay untouched,
+        # ONLY the honest verdict is written, with the real pytest_rc.
+        et = empty_tree()
+        v = git(
+            "commit-tree",
+            et,
+            "-m",
+            verdict_body(task, att, False, worker, oc_rc, pr.returncode),
+        )
+        lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
+        r3 = git(
+            "push",
+            "-q",
+            lease,
+            ORIGIN,
+            f"{v.stdout.strip()}:refs/swarm/verdicts/{task}",
+        )
+        return {
+            "event": "attempted",
+            "worker": worker,
+            "task": task,
+            "att": att,
+            "fixed": False,
+            "pytest_rc": pr.returncode,
+            "oc_rc": oc_rc,
+            "oc_err": "",
+            "env_death": False,
+            "heir_exhausted": False,
+            "main_push": False,
+            "return_pushed": False,
+            "verdict_pushed": ok(r3),
+            "requeued": None,
+            "swept": None,
+            "reason": "merit_failure_no_publish",
+        }
     # return commit on main lineage with the att trailer; concurrent
     # workers push main too — on non-FF, rebase onto origin and retry
+    # (reached only when the oracle PASSED — the publish is earned)
     git("-C", tree, "add", "-A")
     git(
         "-C",
