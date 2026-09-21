@@ -7,6 +7,33 @@ opencode-in-docker worker leg — closed tonight at 5/5 cases single-worker
 (experiments/c3). This note is the map from those files into the live
 batcher (SURVEY §A) with zero design change.
 
+## In-repo lane (current)
+
+As of the dogfood run (2026-09-18) and waves through 2026-09-21, the live
+batcher wires into `l2/inrepo.py` — the in-repo lane that coordinates on
+the project origin itself (claim-CAS refs under `swarm/*`), with the
+seed/worker/audit/sweep/reconcile/divergence/law-gate CLI. It is now the
+proven coordination substrate; the docker recipe below remains the
+container-isolated dispatch backend inside that lane.
+
+- One-line worker invocation:
+
+  ```
+  SWARM_ORIGIN=<origin-url> python3 l2/inrepo.py worker <label>
+  ```
+
+- Dispatch is selectable; coordination is not. `tools/worker_loop.py`
+  (the docker leg) stays as the container-isolated dispatch backend;
+  coordination itself is done by git ref-CAS on the origin — claim,
+  verdict, and archive refs, no flock between hosts.
+- Operational health commands, each printing a JSON receipt:
+  `audit`, `reconcile`, `sweep`, `divergence`. Run them per wave to
+  requeue orphans, close claim/verdict gaps, and confirm the mirror is
+  not diverging from the origin.
+
+The sections below are the 2026-09-15 docker recipe's wiring map and
+checklist — still the dispatch backend's contract.
+
 ## What the batcher keeps (unchanged)
 
 Everything in SURVEY §A.1–A.10: snapshot-wins ledger, claim=send-intent,
