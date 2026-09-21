@@ -1,0 +1,5 @@
+{"event": "attempted", "worker": "example-host-d-hq", "task": "T6-readme-honesty", "att": "att-example-host-d-hq-562938", "oc_rc": 124, "env_death": true, "requeued": true, "swept": "att-example-host-d-hq-562938"}
+{"event": "attempted", "worker": "example-host-d-hq", "task": "T6-readme-honesty", "att": "att-example-host-d-hq-bcecf2", "fixed": false, "pytest_rc": 1, "oc_rc": 124, "oc_err": "", "env_death": true, "heir_exhausted": true, "main_push": true, "return_pushed": true, "verdict_pushed": true}
+{"event": "attempted", "worker": "example-host-d-hq", "task": "T7-hq-integration-refresh", "att": "att-example-host-d-hq-9db209", "fixed": true, "pytest_rc": 0, "oc_rc": 0, "oc_err": "", "env_death": false, "heir_exhausted": false, "main_push": true, "return_pushed": true, "verdict_pushed": true}
+{"event": "worker_done", "worker": "example-host-d-hq", "completed": 3}
+rc=0
