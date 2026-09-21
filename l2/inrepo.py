@@ -312,6 +312,49 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "requeued": bool(swept["archived"]),
             "swept": swept["att"] if swept["archived"] else None,
         }
+    if env_death:
+        # c6 law, second half (ba42841 lesson, wave-2 2026-09-21): with
+        # the heir budget spent, an environmental death is never a fix
+        # — and never a commit either. This path used to fall through
+        # and publish an empty --allow-empty "fix" to main and point
+        # refs/swarm/tasks at it (measured live: commit ba42841). The
+        # oracle is not run at all here — the dispatch never worked —
+        # so pytest_rc is recorded as a plain 1 (not a pass), never as
+        # a measured result. ONLY the final verdict is written; main
+        # and the tasks ref stay untouched.
+        et = empty_tree()
+        v = git(
+            "commit-tree",
+            et,
+            "-m",
+            verdict_body(task, att, False, worker, oc_rc, 1),
+        )
+        lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
+        r3 = git(
+            "push",
+            "-q",
+            lease,
+            ORIGIN,
+            f"{v.stdout.strip()}:refs/swarm/verdicts/{task}",
+        )
+        return {
+            "event": "attempted",
+            "worker": worker,
+            "task": task,
+            "att": att,
+            "fixed": False,
+            "pytest_rc": 1,
+            "oc_rc": oc_rc,
+            "oc_err": "",
+            "env_death": True,
+            "heir_exhausted": True,
+            "main_push": False,
+            "return_pushed": False,
+            "verdict_pushed": ok(r3),
+            "requeued": None,
+            "swept": None,
+            "reason": "heir_exhausted_env_death",
+        }
     # L4 oracle: task-specified verify command, else host pytest in the
     # task dir (first dir under tasks/). bash -lc so example-host-b's pyenv
     # pytest resolves (c6 recipe).
@@ -1076,3 +1119,16 @@ if __name__ == "__main__":
     elif mode == "divergence":
         print(json.dumps(
             divergence(sys.argv[2] if len(sys.argv) > 2 else None), indent=1))
+    elif mode == "open_tasks":
+        # wave-2 2026-09-21: documented as the operator's queue view
+        # (LOOP-2026-09-19) but never wired — the CLI silently no-opped
+        # while any unknown mode fell through the chain the same way.
+        print(json.dumps(open_tasks(), indent=1))
+    else:
+        print(
+            f"unknown mode: {mode}\n"
+            "usage: l2/inrepo.py {seed|worker|audit|sweep|open_tasks"
+            "|reconcile|relabel|divergence} ...",
+            file=sys.stderr,
+        )
+        sys.exit(2)
