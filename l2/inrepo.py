@@ -261,21 +261,18 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     #  default  — opencode headless (V4/V6 laws: own git root, $PWD pin)
     oc_rc = 0
     if os.environ.get("SWARM_DISPATCH") == "freebuff":
-        # fbconn recipe step 1 (HOWTO 'Proven takeover recipe'): the
-        # dispatch owns the slot only if no live TUI holder exists —
-        # clear it HERE, inside the recipe (found live: worker raced
-        # a still-live picker TUI twice)
-        sh(
-            [
-                "bash",
-                "-c",
-                "pkill -f 'the-freebuff-runtime --continue' 2>/dev/null; "
-                "sleep 2; "
-                "rm -f ~/.config/the-freebuff-runtime/freebuff-instance-owner.json; true",
-            ]
-        )
-        # unconditional rm: a zombie TUI (defunct, kill-0 alive) defeats
-        # any pgrep-based conditional — found live on example-host-d
+        # INT-013 wave 4 (2026-09-28): NO local slot clearing here. The
+        # old leg opened with `pkill -f 'the-freebuff-runtime --continue'`
+        # + an unconditional rm of the instance-owner file — a pattern-
+        # kill that hits ANY holder on the host (the 2026-09-14 3.5h
+        # bounce-storm class; fbconn config.py: "never kill by pattern —
+        # only the pid recorded in the owner file"), and destroyed the
+        # classification evidence the guarded takeover itself needs
+        # (active vs bounced, pid-recycling identity). The
+        # run_prompt(takeover=True) below already carries the whole law:
+        # exact-pid identity-verified take_over, typed refusal on an
+        # active/interactive owner — recorded here as dispatch_error,
+        # oc_rc 1 (honest env death -> requeue path), never a crash.
         try:
             sys.path.insert(
                 0, os.environ.get("FBCONN_HOME", "/home/you/freebuff-connector")
