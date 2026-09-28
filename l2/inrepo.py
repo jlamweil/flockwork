@@ -67,6 +67,49 @@ def git(*args, cwd=None, inp=None):
     return sh(["git", *args], cwd=cwd, inp=inp)
 
 
+# Ref-CAS identity + no-phantom-push law (INT-013 wave 5, 2026-09-28).
+# The claim/verdict/spec writes used ambient git identity; on a node
+# without user.email/user.name (first seen from a throwaway-HOME driver)
+# `commit-tree` fails and the EMPTY sha flowed into the refspec —
+# `<empty>:refs/...` deletes a non-existent ref and git exits 0, so the
+# event reported verdict_pushed true with no verdict ever written. The
+# identity is now always carried (-c), the commit result is checked
+# before any push, and a failed commit NEVER becomes a push.
+LANE_EMAIL = "swarmo-lane@refs-cas.local"
+LANE_NAME = "swarmo refs-CAS"
+
+
+def _commit_tree_id_args():
+    return "-c", f"user.email={LANE_EMAIL}", "-c", f"user.name={LANE_NAME}"
+
+
+def commit_tree(*args, **kw):
+    """git commit-tree with the lane identity carried. Returns
+    (sha_or_None, proc): sha None means the commit failed and `proc`
+    carries the REAL rc/stderr (classification + honest events need the
+    actual failure, never a synthesized one)."""
+    proc = git(*_commit_tree_id_args(), "commit-tree", *args, **kw)
+    sha = proc.stdout.strip() if ok(proc) else ""
+    return (sha or None), proc
+
+
+def push_sha_ref(sha, ref, lease=True, failed=None):
+    """Push <sha>:<ref> with force-with-lease. A missing sha FAILS the
+    push — returning the commit's own failed proc when the caller
+    supplied it (real stderr preserved), else a synthetic rc-128 result.
+    Spawning git with an empty refspec is forbidden: git reads it as a
+    ref DELETION and exits 0 (the phantom-verdict bug)."""
+    if not sha:
+        if failed is not None:
+            return failed
+        return subprocess.CompletedProcess(
+            args=["git", "push", ref], returncode=128,
+            stdout="", stderr="no sha: commit-tree failed (push withheld)")
+    lease_arg = f"--force-with-lease={ref}:"
+    return git("push", "-q", *( [lease_arg] if lease else [] ),
+               ORIGIN, f"{sha}:{ref}")
+
+
 def remote(*args, cwd=None):
     orig = os.environ.get("SWARM_ORIGIN", ORIGIN)
     return git("ls-remote", orig, *args, cwd=cwd)
@@ -115,8 +158,9 @@ def seed(spec_path: str) -> dict:
     et = empty_tree()
     R = {}
     for task, brief in sorted(spec.items()):
-        c = git("commit-tree", et, "-m", f"spec {task}\n\n{brief}")
-        r = git("push", "-q", ORIGIN, f"{c.stdout.strip()}:refs/swarm/specs/{task}")
+        c_sha, c_proc = commit_tree(et, "-m", f"spec {task}\n\n{brief}")
+        r = push_sha_ref(c_sha, f"refs/swarm/specs/{task}",
+                         lease=False, failed=c_proc)
         R[task] = ok(r)
     print(json.dumps({"event": "seeded", "tasks": R}, indent=1))
     return R
@@ -133,9 +177,9 @@ def claim_detail(worker: str, task: str) -> dict:
     — the same honesty the scan side owes: measured 2026-09-20,
     addendum 4)."""
     att = f"att-{worker}-{os.urandom(3).hex()}"
-    c = git("commit-tree", empty_tree(), "-m", f"claim {task} {att}")
+    c_sha, c_proc = commit_tree(empty_tree(), "-m", f"claim {task} {att}")
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
-    r = git("push", "-q", lease, ORIGIN, f"{c.stdout.strip()}:refs/swarm/claims/{task}")
+    r = push_sha_ref(c_sha, f"refs/swarm/claims/{task}", failed=c_proc)
     return {"att": att if ok(r) else None, "rc": r.returncode,
             "stderr": r.stderr or ""}
 
@@ -338,20 +382,12 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         # a measured result. ONLY the final verdict is written; main
         # and the tasks ref stay untouched.
         et = empty_tree()
-        v = git(
-            "commit-tree",
+        v_sha, v_proc = commit_tree(
             et,
             "-m",
             verdict_body(task, att, False, worker, oc_rc, 1),
         )
-        lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
-        r3 = git(
-            "push",
-            "-q",
-            lease,
-            ORIGIN,
-            f"{v.stdout.strip()}:refs/swarm/verdicts/{task}",
-        )
+        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc)
         return {
             "event": "attempted",
             "worker": worker,
@@ -393,20 +429,12 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         # failure is FINAL: main and refs/swarm/tasks stay untouched,
         # ONLY the honest verdict is written, with the real pytest_rc.
         et = empty_tree()
-        v = git(
-            "commit-tree",
+        v_sha, v_proc = commit_tree(
             et,
             "-m",
             verdict_body(task, att, False, worker, oc_rc, pr.returncode),
         )
-        lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
-        r3 = git(
-            "push",
-            "-q",
-            lease,
-            ORIGIN,
-            f"{v.stdout.strip()}:refs/swarm/verdicts/{task}",
-        )
+        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc)
         return {
             "event": "attempted",
             "worker": worker,
@@ -489,13 +517,11 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         r2 = None
     # L1 verdict: ROOT commit
     et = empty_tree()
-    v = git(
-        "commit-tree", et, "-m", verdict_body(task, att, fixed, worker, oc_rc, pr.returncode)
+    v_sha, v_proc = commit_tree(
+        et,
+        "-m", verdict_body(task, att, fixed, worker, oc_rc, pr.returncode)
     )
-    lease = f"--force-with-lease=refs/swarm/verdicts/{task}:"
-    r3 = git(
-        "push", "-q", lease, ORIGIN, f"{v.stdout.strip()}:refs/swarm/verdicts/{task}"
-    )
+    r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc)
     oc_err = ""
     try:
         oc_err = (oc.stderr or "")[-200:] if oc.returncode else ""
