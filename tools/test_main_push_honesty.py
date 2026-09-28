@@ -136,6 +136,31 @@ def test_permanent_main_rejection_never_verdicts_true(tmp_path):
         del os.environ["SWARM_ORIGIN"]
 
 
+def test_heir_exhausted_rejection_never_advances_tasks_ref(tmp_path):
+    """INT-015 (wave-4 disclosed round-6 path, closed 2026-09-28): a
+    rejected main push that exhausts the heir budget writes ONLY the
+    final honest fixed:false verdict. refs/swarm/tasks is a RETURN —
+    advancing it with tree content main contradicts, beside a
+    fixed:false verdict, is the substrate-lie shape (the merit-fail and
+    heir-exhausted env-death contracts already pin `tasks` absent; this
+    was the last path still advancing the ref)."""
+    o, w = _sandbox(tmp_path, "always")
+    r, events = _run_worker(o, w)
+    assert r.returncode == 0, r.stdout + r.stderr
+    atts = [e for e in events if e["event"] == "attempted"]
+    assert len(atts) == 2, events
+    second = atts[1]
+    assert second["fixed"] is False and second["main_push"] is False
+    assert second["return_pushed"] is False
+    assert second.get("reason") == "main_push_rejected_heir_exhausted"
+    refs = _git("ls-remote", str(o)).stdout
+    assert "refs/swarm/tasks/T-mp" not in refs
+    assert "refs/swarm/verdicts/T-mp" in refs
+    body = _git("-C", str(o), "log", "-1", "--format=%B",
+                "refs/swarm/verdicts/T-mp").stdout
+    assert "fixed: false" in body
+
+
 def test_single_collision_recovers_via_rebase(tmp_path):
     o, w = _sandbox(tmp_path, "once")
     r, events = _run_worker(o, w)

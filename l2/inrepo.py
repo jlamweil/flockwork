@@ -473,8 +473,21 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "reason": "main_push_rejected",
             }
         fixed = False  # heirs exhausted: final honest verdict below
-    lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
-    r2 = git("-C", tree, "push", "-q", lease, ORIGIN, f"HEAD:refs/swarm/tasks/{task}")
+    if fixed:
+        lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
+        r2 = git(
+            "-C", tree, "push", "-q", lease, ORIGIN, f"HEAD:refs/swarm/tasks/{task}"
+        )
+    else:
+        # INT-015 (wave-4 disclosed round-6 path, closed 2026-09-28):
+        # heirs exhausted on a rejected main push → ONLY the final
+        # honest verdict. The tasks ref is a RETURN: advancing it with
+        # content main contradicts beside a fixed:false verdict is the
+        # substrate-lie shape the merit-fail and heir-exhausted
+        # env-death paths never commit. The live claim keeps the task
+        # out of open_tasks; reconcile's TTL may re-lease it later —
+        # oracle-passing work legitimately retries on a fresh lease.
+        r2 = None
     # L1 verdict: ROOT commit
     et = empty_tree()
     v = git(
@@ -489,7 +502,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         oc_err = (oc.stderr or "")[-200:] if oc.returncode else ""
     except Exception:  # noqa: BLE001 — freebuff path has no oc object
         oc_err = ""
-    return {
+    out = {
         "event": "attempted",
         "worker": worker,
         "task": task,
@@ -501,9 +514,12 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         "env_death": env_death,
         "heir_exhausted": env_death,
         "main_push": ok(r1),
-        "return_pushed": ok(r2),
+        "return_pushed": r2 is not None and ok(r2),
         "verdict_pushed": ok(r3),
     }
+    if not fixed:
+        out["reason"] = "main_push_rejected_heir_exhausted"
+    return out
 
 
 def tempfile_tree(task):
