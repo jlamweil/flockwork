@@ -193,3 +193,39 @@ def test_legit_reads_unchanged_after_quoting(lane):
                                  "refs/swarm/claims/T-nice")
     assert ts is not None
     assert not _pwned(root).exists()
+
+
+def _publish_law(origin, law_bytes: bytes) -> None:
+    """Put the RUNNING lane law at main:l2/inrepo.py on a bare origin."""
+    w = pathlib.Path(origin).parent / "law-w"
+    if not w.exists():
+        _git("init", "-q", "-b", "main", str(w))
+    d = w / "l2"
+    d.mkdir(exist_ok=True)
+    (d / "inrepo.py").write_bytes(law_bytes)
+    _git("-C", str(w), "add", "-A")
+    _git("-C", str(w), "-c", "user.email=a@b", "-c", "user.name=a",
+         "commit", "-qm", "law")
+    _git("-C", str(w), "push", "-q", "--force", str(origin), "HEAD:main")
+
+
+def test_law_check_ssh_form_reports_match(lane):
+    """Coverage completion for the SECOND _ssh_cmd call site
+    (law_check's rev-parse leg — remote-data-free argv, but the same
+    quoting correctness applies to the origin URL's path/host).
+    Expected GREEN (not a defect claim): publishing the running law to
+    the fake ssh origin must yield status 'match' through the
+    ssh-transported read; anything else means the ssh leg misreads."""
+    o, root = lane
+    _publish_law(o, pathlib.Path(inrepo.__file__).read_bytes())
+    out = inrepo.law_check("ssh://fakehost/origin.git")
+    assert out["status"] == "match", out
+    assert out["origin_sha"] == out["local_sha"]
+
+
+def test_law_check_ssh_form_reports_stale(lane):
+    o, root = lane
+    _publish_law(o, b"# not the law\n")
+    out = inrepo.law_check("ssh://fakehost/origin.git")
+    assert out["status"] == "stale", out
+    assert not _pwned(root).exists()

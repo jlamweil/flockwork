@@ -10,6 +10,15 @@ No fleet, no network: a PATH-stub `ssh` maps the "remote" onto a tmp
 directory (scp-form path = relative to the fake remote root, exactly the
 remote-HOME convention), so the whole lane — ls-remote, fetch, push,
 cat-file — runs against a local bare origin addressed AS a remote.
+
+MODELING LIMIT (disclosed 2026-09-28, wave 2 of the ssh-quoting audit):
+this stub's transport leg strips ALL single quotes from git's one
+remote-command argument (`tr -d "'"`). That is right for protocol legs
+(`git-upload-pack '<url>'`) but would defeat client-side shell quoting
+on plain remote commands — the exact defense test_inrepo_ssh_shell_
+injection.py pins. Reuse THAT suite's stub (executes the command string
+as received, quotes included) for any future injection-class work; do
+not grow shell-argument contracts on this one.
 """
 import importlib.util
 import os
