@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,21 @@ def git(*args, cwd=None, inp=None):
 def remote(*args, cwd=None):
     orig = os.environ.get("SWARM_ORIGIN", ORIGIN)
     return git("ls-remote", orig, *args, cwd=cwd)
+
+
+def _ssh_cmd(host: str, port, *argv: str) -> list:
+    """ssh command whose remote side is a SHELL string: ssh concatenates
+    the command argv into one string and hands it to the login shell, so
+    every argv element is joined shlex.quote'd (DESIGN-NEXT §5 repair —
+    c8 run-5: 'ssh joins argv and the remote shell eats the parens';
+    the 2026-09-28 contract test extends the class to remote-data
+    REFNAMES: the claim-CAS namespace accepts shell-active names, and
+    origin reads pre-fix executed them on the origin host)."""
+    cmd = ["ssh", "-o", "BatchMode=yes"]
+    if port:
+        cmd += ["-p", str(port)]
+    cmd += [host, " ".join(shlex.quote(a) for a in argv)]
+    return cmd
 
 
 def empty_tree():
@@ -493,7 +509,14 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
 def tempfile_tree(task):
     import tempfile
 
-    return tempfile.mkdtemp(prefix=f"inrepo-{task}-")
+    # task names are REMOTE DATA (the claim-CAS namespace accepts any
+    # legal refname): a name carrying '/' would point mkdtemp under a
+    # nonexistent directory (found live 2026-09-28 — sweep crashed on
+    # exactly that shape, the local twin of the ssh-shell-injection
+    # class). Sanitize to the refname-safe alphabet; collisions are
+    # impossible anyway (mkdtemp appends random chars).
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", task)[:64]
+    return tempfile.mkdtemp(prefix=f"inrepo-{safe}-")
 
 
 def worker(name: str, only: list | None = None) -> bool:
@@ -871,10 +894,8 @@ def law_check(origin: str) -> dict:
     try:
         if tgt is not None:
             _host, _port, _path = tgt
-            cmd = ["ssh", "-o", "BatchMode=yes"]
-            if _port:
-                cmd += ["-p", str(_port)]
-            cmd += [_host, "git", "-C", _path, "rev-parse", f"main:{LAW_PATH}"]
+            cmd = _ssh_cmd(_host, _port,
+                           "git", "-C", _path, "rev-parse", f"main:{LAW_PATH}")
             r = sh(cmd)
         else:
             path = origin
@@ -1029,10 +1050,8 @@ def origin_raw(origin: str, ref_or_sha: str) -> str:
     tgt = ssh_target(origin)
     if tgt is not None:
         _host, _port, _path = tgt
-        cmd = ["ssh", "-o", "BatchMode=yes"]
-        if _port:
-            cmd += ["-p", str(_port)]
-        cmd += [_host, "git", "-C", _path, "cat-file", "-p", ref_or_sha]
+        cmd = _ssh_cmd(_host, _port,
+                       "git", "-C", _path, "cat-file", "-p", ref_or_sha)
         r = sh(cmd)
         return r.stdout if ok(r) else ""
     path = origin
