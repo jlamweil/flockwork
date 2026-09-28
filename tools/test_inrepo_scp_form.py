@@ -11,14 +11,26 @@ directory (scp-form path = relative to the fake remote root, exactly the
 remote-HOME convention), so the whole lane — ls-remote, fetch, push,
 cat-file — runs against a local bare origin addressed AS a remote.
 
-MODELING LIMIT (disclosed 2026-09-28, wave 2 of the ssh-quoting audit):
-this stub's transport leg strips ALL single quotes from git's one
-remote-command argument (`tr -d "'"`). That is right for protocol legs
-(`git-upload-pack '<url>'`) but would defeat client-side shell quoting
-on plain remote commands — the exact defense test_inrepo_ssh_shell_
-injection.py pins. Reuse THAT suite's stub (executes the command string
-as received, quotes included) for any future injection-class work; do
-not grow shell-argument contracts on this one.
+SSHD-FAITHFUL STUB (2026-09-28, INT-013 wave 3 — supersedes the modeling
+limit disclosed in wave 2): the old stub stripped ALL single quotes from
+the remote command and word-split it, silently defeating client-side
+shell quoting — the exact defense test_inrepo_ssh_shell_injection.py
+pins. This stub keeps git's protocol legs (`git-upload-pack '<url>'`) on
+the de-quote path (they are one argument to upload-pack, not a shell
+line) and hands EVERY other remote command to the login shell exactly as
+sshd does: the harness rewrites only the fake-root path prefix inside
+the string, preserving the rest byte-for-byte, then `bash -c <string as
+received>`. Shell-active refnames stay shell-active here — which is what
+makes the injection contracts below meaningful on the SCP-FORM branch of
+ssh_target (the injection suite exercises only ssh:// forms).
+
+FALSIFICATION RECEIPT (wave 3, measured before the contracts landed):
+with this shell-faithful stub but _ssh_cmd reverted to the pre-wave-1
+plain join, origin_body over a hostile-named claim created the marker
+file ON THE FAKE ORIGIN HOST (the dangerous shape, reproduced); with the
+committed shlex.quote-join the same reads are inert. The contracts below
+pin the inert shape so a future de-quote regression measures RED here
+too — not only on ssh:// forms.
 """
 import importlib.util
 import os
@@ -40,26 +52,35 @@ inrepo = _load()
 
 SSH_STUB = """\
 #!/bin/bash
-# fake ssh: [-o k=v]* [-p port] host <remote command...>
+# fake ssh: [-o k=v]* [-p port] host <remote command as ONE argument>
 while [ "$1" = "-o" ]; do shift 2; done
 if [ "$1" = "-p" ]; then shift 2; fi
 shift  # host
-# git over ssh sends the remote command as ONE argument
-# (`git-upload-pack 'origin.git'`) — de-quote, then word-split it apart
-if [ $# -eq 1 ]; then set -- $(printf %s "$1" | tr -d "'"); fi
-case "$1" in
-  git-upload-pack) shift; exec git -C "$FAKE_REMOTE_ROOT" upload-pack "$@" ;;
-  git-receive-pack) shift; exec git -C "$FAKE_REMOTE_ROOT" receive-pack "$@" ;;
+export FAKE_REMOTE_ROOT
+# git transport sends the remote command as ONE argument
+# (`git-upload-pack '<url>'`) — a protocol leg, not a shell line:
+# de-quote, strip the leading '/', dispatch into the fake root
+ case "${1%% *}" in
+  git-upload-pack|git-receive-pack)
+    set -- $(printf %s "$1" | tr -d "'")
+    cmd=$1; p=$2; p=${p#/}
+    case "$cmd" in
+      git-upload-pack) exec git -C "$FAKE_REMOTE_ROOT" upload-pack "$p" ;;
+      git-receive-pack) exec git -C "$FAKE_REMOTE_ROOT" receive-pack "$p" ;;
+    esac ;;
 esac
-if [ "$1" = "git" ] && [ "$2" = "-C" ]; then
-  shift 2
-  path="$1"; shift
-  # scp-form paths are relative to the remote HOME (the fake remote root);
-  # ssh://-form paths arrive absolute, so strip nothing — the root IS the
-  # remote /, and seeds live directly under it
-  exec git -C "$FAKE_REMOTE_ROOT/${path#/}" "$@"
+# harness fiction (sshd-faithful): rewrite the fake-remote path prefix
+# INSIDE the command string, preserving the rest byte-for-byte (QUOTES
+# INCLUDED) — the remote login shell then parses the full string exactly
+# like sshd does (`$SHELL -c <string as received>`). Client-side quoting
+# is NOT laundered away: shell-active refnames stay shell-active here,
+# exactly as on the real origin host.
+if [[ "$1" == "git -C "* ]]; then
+  rest=${1#git -C }
+  path=${rest%% *}
+  set -- "git -C $FAKE_REMOTE_ROOT/${path#/}${rest#"$path"}"
 fi
-exec git -C "$FAKE_REMOTE_ROOT" "$@"
+exec bash -c "$1"
 """
 
 
@@ -107,6 +128,32 @@ def _seed_claim(origin, task, att, with_return=True, with_verdict=True):
              f"{v}:refs/swarm/verdicts/{task}")
     return c
 
+
+# shell-ACTIVE payload, space-free ($IFS supplies the separator — a
+# literal space would break ls-remote's whitespace parsing and could
+# never arrive through real remote data). Same payload family as
+# test_inrepo_ssh_shell_injection.py, now pinned on the SCP-FORM branch
+# of ssh_target (the injection suite covers only ssh:// forms).
+HOSTILE_TASK = "T-$(touch$IFS$FAKE_REMOTE_ROOT/swarm-pwned-scp)"
+MARKER = "swarm-pwned-scp"
+
+
+def test_premise_refname_is_legal():
+    """Pin the premise: the payload name survives git's own refname
+    rules — it CAN arrive through the claim-CAS namespace as scp-form
+    remote data."""
+    r = subprocess.run(
+        ["git", "check-ref-format", f"refs/swarm/claims/{HOSTILE_TASK}"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0
+
+
+def _pwned(root):
+    return pathlib.Path(str(root)) / MARKER
+
+
+# ------------------------------------------------- form parity (H2/H3)
 
 def test_scp_form_body_matches_ssh_form(lane):
     """The H2 core: same object, both documented forms, byte-identical."""
@@ -160,3 +207,96 @@ def test_scp_form_sweep_recovers_att(lane):
     have = _git("ls-remote", o).stdout
     assert "refs/swarm/archive/claims/T-swp@att-w5-scp05" in have
     assert "refs/swarm/claims/T-swp" not in have
+
+
+# ------------------------------ shell-inertness on the scp-form branch
+
+def test_scp_form_hostile_ref_is_shell_inert(lane):
+    """origin_body over a hostile refname via the DOCUMENTED scp-form
+    origin must not execute anything on the origin host."""
+    o, root = lane
+    body = inrepo.origin_body("fakeuser@fakehost:origin.git",
+                              f"refs/swarm/claims/{HOSTILE_TASK}")
+    assert body == ""  # ref absent: read fails honestly, NOTHING runs
+    assert not _pwned(root).exists()
+
+
+def test_scp_form_hostile_claim_sweep_is_inert_and_complete(lane):
+    """End-to-end on scp-form: a hostile-named claim (seeded by 'another
+    worker', return+verdict present) is read by sweep's att-recovery —
+    the exact production path. The lane must heal the task WITHOUT
+    executing the payload, and still recover the true att (quoting is
+    behavior-preserving for legitimate reads)."""
+    o, root = lane
+    _seed_claim(o, HOSTILE_TASK, "att-w6-scp06",
+                with_return=True, with_verdict=True)
+    res = inrepo.sweep("fakeuser@fakehost:origin.git", HOSTILE_TASK)
+    assert res["att"] == "att-w6-scp06"
+    have = _git("ls-remote", o).stdout
+    assert f"refs/swarm/claims/{HOSTILE_TASK}" not in have
+    assert f"refs/swarm/archive/claims/{HOSTILE_TASK}@att-w6-scp06" in have
+    assert not _pwned(root).exists()
+
+
+def test_scp_form_reconcile_over_hostile_claim_is_inert(lane):
+    """reconcile dates every live claim via origin_commit_ts — remote
+    task names flow straight into the scp-form ssh remote command."""
+    o, root = lane
+    _seed_claim(o, HOSTILE_TASK, "att-w7-scp07",
+                with_return=False, with_verdict=False)
+    out = inrepo.reconcile("fakeuser@fakehost:origin.git")
+    assert out["errors"] == []
+    assert HOSTILE_TASK in out["fresh"]
+    assert not _pwned(root).exists()
+
+
+def test_scp_form_legit_reads_unchanged_after_stub_rewrite(lane):
+    """Behavior-preservation sentinel for the wave-3 stub rewrite: a
+    normal ref reads exactly as before through the now shell-faithful
+    transport."""
+    o, root = lane
+    _seed_claim(o, "T-nice", "att-w8-scp08")
+    body = inrepo.origin_body("fakehost:origin.git",
+                              "refs/swarm/claims/T-nice")
+    assert "att-w8-scp08" in body
+    ts = inrepo.origin_commit_ts("fakehost:origin.git",
+                                 "refs/swarm/claims/T-nice")
+    assert ts is not None
+    assert not _pwned(root).exists()
+
+
+# ----------------------------- law_check through the scp-form branch
+
+def _publish_law(origin, law_bytes: bytes) -> None:
+    """Put the RUNNING lane law at main:l2/inrepo.py on a bare origin."""
+    w = pathlib.Path(origin).parent / "law-w"
+    if not w.exists():
+        _git("init", "-q", "-b", "main", str(w))
+    d = w / "l2"
+    d.mkdir(exist_ok=True)
+    (d / "inrepo.py").write_bytes(law_bytes)
+    _git("-C", str(w), "add", "-A")
+    _git("-C", str(w), "-c", "user.email=a@b", "-c", "user.name=a",
+         "commit", "-qm", "law")
+    _git("-C", str(w), "push", "-q", "--force", str(origin), "HEAD:main")
+
+
+def test_law_check_scp_form_reports_match(lane):
+    """Coverage completion: law_check (the SECOND _ssh_cmd call site)
+    through the scp-form branch of ssh_target — the documented
+    SWARM_ORIGIN form had no law-check contract on any form before
+    wave 3 (the injection suite pins law_check on ssh:// only)."""
+    o, root = lane
+    _publish_law(o, pathlib.Path(inrepo.__file__).read_bytes())
+    out = inrepo.law_check("fakeuser@fakehost:origin.git")
+    assert out["status"] == "match", out
+    assert out["origin_sha"] == out["local_sha"]
+    assert not _pwned(root).exists()
+
+
+def test_law_check_scp_form_reports_stale(lane):
+    o, root = lane
+    _publish_law(o, b"# not the law\n")
+    out = inrepo.law_check("fakeuser@fakehost:origin.git")
+    assert out["status"] == "stale", out
+    assert not _pwned(root).exists()
