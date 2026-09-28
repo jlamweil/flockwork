@@ -28,6 +28,8 @@ Usage (run from a worker clone of the origin):
   python3 l2/inrepo.py audit [tasks...]   # read-only H1/H2 over refs
   python3 l2/inrepo.py sweep ORIGIN TASK [ATT]  # archive+free swarm refs
   python3 l2/inrepo.py reconcile [ORIGIN] [TTL_S]  # sweep stale claims
+  python3 l2/inrepo.py correction-graph [ORIGIN]  # multi-model attempt
+      # graph from refs alone (INT-016 seed; read-only)
 """
 
 from __future__ import annotations
@@ -1174,6 +1176,109 @@ def audit(only: list | None = None) -> None:
     )
 
 
+# --------------------------------------------------- correction graph
+
+
+def mm_model_of(att: str) -> str | None:
+    """Model identity from an att token alone, per the correction-graph
+    spec's label grammar (INT-016): worker labels declare
+    mm-<model>-<role>, so att-mm-<model>-<role>-<hex6> attributes the
+    attempt to <model>. Anything else — pre-protocol labels, missing
+    role, a model or role containing '-' (extra tokens), a malformed
+    suffix — attributes as None: an honest unknown vertex, never a
+    silently misfiled one. Grammar tokens are refname-safe
+    [A-Za-z0-9._-] by construction (the remote-data lesson: labels
+    become ref names); '-' inside ids is forbidden because it makes
+    the token split ambiguous."""
+    parts = att.split("-")
+    if (
+        len(parts) == 5
+        and parts[0] == "att"
+        and parts[1] == "mm"
+        and re.fullmatch(r"[0-9a-f]{6}", parts[4])
+    ):
+        return parts[2]
+    return None
+
+
+def correction_graph(origin: str) -> dict:
+    """Multi-model correction graph, reconstructed from refs alone.
+
+    DESIGN-NEXT §4 deferred the correction graph + RAEE/PPR leaderboard
+    until '≥2 models compete on the same task stream' — this is the
+    substrate read side that trigger builds on (INT-016 seed; no live
+    multi-model run ships with it). Vertices are a task's attempts:
+    every archived claim (@att refs, L3), the live claim, and — when a
+    verdict exists — the verdict's attempt. Edges are 'corrects' links
+    between consecutive attempts ordered by claim-commit time (the c6
+    heir/reconcile law creates them; nothing here writes refs). Model
+    attribution comes from mm_model_of on the att token: refs + commit
+    objects must carry the whole story — no ledger, no env, no log.
+
+    Read-only: ls-remote + origin object reads, never a ref write."""
+    have = {}
+    for ln in git("ls-remote", origin).stdout.splitlines():
+        if ln.strip():
+            sha, ref = ln.split()
+            have[ref] = sha
+    tasks = sorted(
+        r[len("refs/swarm/specs/") :]
+        for r in have
+        if r.startswith("refs/swarm/specs/") and "@" not in r
+    )
+    G = {"origin": origin, "tasks": {}, "edges": [], "models": {}}
+    for t in tasks:
+        v_att = None
+        vref = f"refs/swarm/verdicts/{t}"
+        if vref in have:
+            for ln in origin_body(origin, vref).splitlines():
+                k, _, val = ln.partition(":")
+                if k.strip() == "attempt":
+                    v_att = val.strip()
+        raw = [
+            (ref.split("@", 1)[1], ref)
+            for ref in have
+            if ref.startswith(f"refs/swarm/archive/claims/{t}@")
+        ]
+        cref = f"refs/swarm/claims/{t}"
+        if cref in have:
+            cand = origin_body(origin, cref).strip().split()
+            if cand and cand[-1].startswith("att-"):
+                raw.append((cand[-1], cref))
+        if v_att and v_att not in [a for a, _ in raw]:
+            raw.append((v_att, vref))  # verdict-only vertex (claim gone)
+        attempts = []
+        for att, ref in raw:
+            attempts.append(
+                {
+                    "att": att,
+                    "ts": origin_commit_ts(origin, ref),
+                    "model": mm_model_of(att),
+                    "final": att == v_att,
+                }
+            )
+        # undateable attempts sort last, deterministically by att
+        attempts.sort(key=lambda a: (a["ts"] is None, a["ts"] or 0.0, a["att"]))
+        G["tasks"][t] = {"attempts": attempts, "verdict_att": v_att}
+        for a, b in zip(attempts, attempts[1:]):
+            G["edges"].append(
+                {
+                    "task": t,
+                    "from_att": a["att"],
+                    "to_att": b["att"],
+                    "from_model": a["model"],
+                    "to_model": b["model"],
+                }
+            )
+        for a in attempts:
+            m = a["model"] or "unknown"
+            g = G["models"].setdefault(m, {"attempts": 0, "fixed": 0})
+            g["attempts"] += 1
+            if a["final"]:
+                g["fixed"] += 1
+    return G
+
+
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "audit"
     if mode == "seed":
@@ -1202,11 +1307,19 @@ if __name__ == "__main__":
         # (LOOP-2026-09-19) but never wired — the CLI silently no-opped
         # while any unknown mode fell through the chain the same way.
         print(json.dumps(open_tasks(), indent=1))
+    elif mode == "correction-graph":
+        print(json.dumps(
+            correction_graph(
+                sys.argv[2] if len(sys.argv) > 2
+                else os.environ.get("SWARM_ORIGIN", ORIGIN)
+            ),
+            indent=1,
+        ))
     else:
         print(
             f"unknown mode: {mode}\n"
             "usage: l2/inrepo.py {seed|worker|audit|sweep|open_tasks"
-            "|reconcile|relabel|divergence} ...",
+            "|reconcile|relabel|divergence|correction-graph} ...",
             file=sys.stderr,
         )
         sys.exit(2)
