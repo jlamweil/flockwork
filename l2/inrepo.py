@@ -313,11 +313,61 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             ev["requeued"] = False
             ev["sweep_error"] = str(e)[:200]
         return ev
+
+    def _env_death_before_dispatch(reason: str, err: str) -> dict:
+        """The attempt died between claim and dispatch (clone failure or,
+        wave-9, a missing/empty spec): nothing was spent, so there is no
+        verdict, no return, no heir cost — the claim is archived under
+        its true att (the sweep law) and the task re-enters the queue."""
+        ev = {
+            "event": "attempted",
+            "worker": worker,
+            "task": task,
+            "att": att,
+            "env_death": True,
+            "reason": reason,
+            "err": err[:200],
+        }
+        try:
+            swept = sweep(ORIGIN, task)
+            ev["requeued"] = bool(swept["archived"])
+            ev["swept"] = swept["att"] if swept["archived"] else None
+        except RuntimeError as e:
+            ev["requeued"] = False
+            ev["sweep_error"] = str(e)[:200]
+        return ev
+
     git("-C", tree, "config", "user.email", f"{worker}@swarm")
     git("-C", tree, "config", "user.name", worker)
     # fetch the spec ref, read the brief (verify: line = task oracle)
-    git("-C", tree, "fetch", "-q", ORIGIN, f"refs/swarm/specs/{task}")
+    # wave-9 (INT-013, 2026-09-29): the fetch was UNCHECKED. A missing or
+    # unreadable spec ref (a lost-ref transient — the same r2 class the
+    # wave-6 row documents for return refs; origin-host containment
+    # surgery like wave 6's own `update-ref -d`; a spec body that is
+    # empty) left brief="" and the attempt DISPATCHED ON AN EMPTY BRIEF —
+    # a real backend leg (a 5-credit freebuff session, an opencode run)
+    # on nothing — and then judged whatever the tree happened to do: the
+    # measured falsifier saw the default pytest oracle's cache artifacts
+    # become a diff, get committed, and PUBLISH to main with a green
+    # verdict (fixed:true) for an attempt that never saw its task — the
+    # ba42841 substrate-lie family through a new route. An attempt
+    # without its brief is an ENVIRONMENTAL DEATH BEFORE DISPATCH: no
+    # dispatch, no oracle, no verdict, no return — the claim is archived
+    # under its true att (the sweep law) and the task re-enters
+    # open_tasks when its spec is healthy again. No heir cost (the
+    # clone-failure shape: the attempt died before anything was spent).
+    fr = git("-C", tree, "fetch", "-q", ORIGIN, f"refs/swarm/specs/{task}")
+    if not ok(fr):
+        return _env_death_before_dispatch(
+            "spec-fetch-failed", fr.stderr.strip()
+        )
     brief = git("-C", tree, "log", "-1", "--format=%B", "FETCH_HEAD").stdout.strip()
+    if not brief:
+        return _env_death_before_dispatch(
+            "spec-empty",
+            "spec ref fetched but its brief body is empty — "
+            "nothing to dispatch on",
+        )
     verify = next(
         (
             ln[len("verify:") :].strip()
