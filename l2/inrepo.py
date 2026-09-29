@@ -316,26 +316,69 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
 
     def _env_death_before_dispatch(reason: str, err: str) -> dict:
         """The attempt died between claim and dispatch (clone failure or,
-        wave-9, a missing/empty spec): nothing was spent, so there is no
-        verdict, no return, no heir cost — the claim is archived under
-        its true att (the sweep law) and the task re-enters the queue."""
-        ev = {
+        wave-9, a missing/empty spec). Nothing was spent, so there is no
+        verdict, no return, and — unless the heir budget is spent — no
+        final judgment: the claim is archived under its true att (the
+        sweep law) and the task re-enters the queue.
+
+        wave-10 (INT-013, 2026-09-29): the sweep is NOT unconditional.
+        The c6 one-heir law gates here exactly as it gates post-dispatch
+        deaths — a PERMANENTLY broken spec (an empty brief that nothing
+        repairs) otherwise churns claim→death→sweep forever: a fast loop
+        with no TTL, no reconcile backstop (the claim is freed at once,
+        so reconcile never sees a stale claim), no final verdict ever
+        surfacing, and one archive ref added per cycle. First death
+        requeues (the spec may be mid-repair); under a spent budget the
+        path writes the honest final fixed:false verdict instead — the
+        oracle never ran, so pytest_rc stays a plain 1 and oc_rc is 1
+        (no usable dispatch leg — never 0, which reads as merit)."""
+        if heirs_count(ORIGIN, task) < int(
+            os.environ.get("SWARM_HEIR_MAX", "1")
+        ):
+            ev = {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "env_death": True,
+                "reason": reason,
+                "err": err[:200],
+            }
+            try:
+                swept = sweep(ORIGIN, task)
+                ev["requeued"] = bool(swept["archived"])
+                ev["swept"] = swept["att"] if swept["archived"] else None
+            except RuntimeError as e:
+                ev["requeued"] = False
+                ev["sweep_error"] = str(e)[:200]
+            return ev
+        # budget spent: ONLY the final verdict is written — main and the
+        # tasks ref stay untouched (the heir-exhausted law, wave-2).
+        et = empty_tree()
+        v_sha, v_proc = commit_tree(
+            et,
+            "-m",
+            verdict_body(task, att, False, worker, 1, 1),
+        )
+        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc)
+        return {
             "event": "attempted",
             "worker": worker,
             "task": task,
             "att": att,
+            "fixed": False,
+            "pytest_rc": 1,
+            "oc_rc": 1,
+            "oc_err": "",
             "env_death": True,
-            "reason": reason,
-            "err": err[:200],
+            "heir_exhausted": True,
+            "main_push": False,
+            "return_pushed": False,
+            "verdict_pushed": ok(r3),
+            "requeued": None,
+            "swept": None,
+            "reason": f"{reason}_heir_exhausted",
         }
-        try:
-            swept = sweep(ORIGIN, task)
-            ev["requeued"] = bool(swept["archived"])
-            ev["swept"] = swept["att"] if swept["archived"] else None
-        except RuntimeError as e:
-            ev["requeued"] = False
-            ev["sweep_error"] = str(e)[:200]
-        return ev
 
     git("-C", tree, "config", "user.email", f"{worker}@swarm")
     git("-C", tree, "config", "user.name", worker)
