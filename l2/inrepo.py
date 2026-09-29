@@ -266,9 +266,49 @@ def open_tasks() -> list:
 
 def heirs_count(origin: str, task: str) -> int:
     """Archived dead attempts for a task — each archive/claims ref is one
-    environmental death already recorded (by reconcile or self-requeue)."""
+    environmental death already recorded (by reconcile or self-requeue).
+
+    wave-13 (INT-013, 2026-09-29): the read is rc-CHECKED. It feeds the
+    c6 one-heir gate (every requeue decision in _work_task); the old
+    unchecked git() returned 0 on an unreachable origin — a lie that
+    silently OPENED the heir budget (every fresh requeue looks
+    budget-fresh) exactly when the lane cannot see its own archive. A
+    reachable empty archive still counts 0."""
     r = git("ls-remote", origin, f"refs/swarm/archive/claims/{task}@*")
+    if not ok(r):
+        raise RuntimeError(
+            f"origin unreachable: {(r.stderr or r.stdout or '').strip()[:200]}"
+        )
     return sum(1 for ln in r.stdout.splitlines() if ln.strip())
+
+
+def _heir_gate(task: str) -> tuple[bool, str | None]:
+    """The c6 one-heir gate, origin-failure-safe (wave 13, INT-013,
+    2026-09-29). Returns (budget_fresh, error): error non-None means the
+    origin died mid-attempt and the gate could not be evaluated — the
+    caller records the death honestly (the claim stays live for
+    reconcile's TTL) instead of acting on a gate value it does not
+    know, and never crashes into the worker's work_task_error
+    catch-all with zero c6 accounting."""
+    try:
+        return (
+            heirs_count(ORIGIN, task)
+            < int(os.environ.get("SWARM_HEIR_MAX", "1")),
+            None,
+        )
+    except RuntimeError as e:
+        return False, str(e)[:200]
+
+
+def _guarded_sweep(task: str) -> tuple[dict | None, str | None]:
+    """sweep() with the origin-death recorded, never raised (wave 13):
+    the requeue legs run exactly when the substrate is flapping — a
+    failure returns (None, error) so the attempt's event stays
+    structured (requeued False + sweep_error) instead of crashing."""
+    try:
+        return sweep(ORIGIN, task), None
+    except RuntimeError as e:
+        return None, str(e)[:200]
 
 
 def work_task(worker: str, task: str, att: str) -> dict:
@@ -332,9 +372,24 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         path writes the honest final fixed:false verdict instead — the
         oracle never ran, so pytest_rc stays a plain 1 and oc_rc is 1
         (no usable dispatch leg — never 0, which reads as merit)."""
-        if heirs_count(ORIGIN, task) < int(
-            os.environ.get("SWARM_HEIR_MAX", "1")
-        ):
+        budget_fresh, gate_err = _heir_gate(task)
+        if gate_err is not None:
+            # wave-13: the origin died between the spec read and the c6
+            # gate — record the death honestly (the claim stays live for
+            # reconcile's TTL); never the rc-blind lie-0, never a crash.
+            return {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "env_death": True,
+                "reason": reason,
+                "err": err[:200],
+                "requeued": False,
+                "swept": None,
+                "sweep_error": gate_err,
+            }
+        if budget_fresh:
             ev = {
                 "event": "attempted",
                 "worker": worker,
@@ -344,13 +399,13 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "reason": reason,
                 "err": err[:200],
             }
-            try:
-                swept = sweep(ORIGIN, task)
+            swept, sweep_err = _guarded_sweep(task)
+            if sweep_err is None:
                 ev["requeued"] = bool(swept["archived"])
                 ev["swept"] = swept["att"] if swept["archived"] else None
-            except RuntimeError as e:
+            else:
                 ev["requeued"] = False
-                ev["sweep_error"] = str(e)[:200]
+                ev["sweep_error"] = sweep_err
             return ev
         # budget spent: ONLY the final verdict is written — main and the
         # tasks ref stay untouched (the heir-exhausted law, wave-2).
@@ -478,20 +533,44 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # error table (no requeue storms from ambiguous exits).
     no_changes = git("-C", tree, "status", "--porcelain").stdout.strip() == ""
     env_death = oc_rc == 124 or (oc_rc != 0 and no_changes)
-    if env_death and heirs_count(ORIGIN, task) < int(
-        os.environ.get("SWARM_HEIR_MAX", "1")
-    ):
-        swept = sweep(ORIGIN, task)
-        return {
-            "event": "attempted",
-            "worker": worker,
-            "task": task,
-            "att": att,
-            "oc_rc": oc_rc,
-            "env_death": True,
-            "requeued": bool(swept["archived"]),
-            "swept": swept["att"] if swept["archived"] else None,
-        }
+    if env_death:
+        budget_fresh, gate_err = _heir_gate(task)
+        if gate_err is not None:
+            # wave-13: the origin died mid-attempt (the dispatch leg
+            # genuinely ran — oc_rc is real) and the c6 gate is
+            # unevaluatable. The death is RECORDED with the failure
+            # (the claim stays live; reconcile's TTL requeues on heal)
+            # — never the rc-blind lie-0 that silently OPENED the heir
+            # budget, and never a crash into the worker's catch-all.
+            return {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "oc_rc": oc_rc,
+                "env_death": True,
+                "requeued": False,
+                "swept": None,
+                "sweep_error": gate_err,
+            }
+        if budget_fresh:
+            swept, sweep_err = _guarded_sweep(task)
+            ev = {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "oc_rc": oc_rc,
+                "env_death": True,
+            }
+            if sweep_err is None:
+                ev["requeued"] = bool(swept["archived"])
+                ev["swept"] = swept["att"] if swept["archived"] else None
+            else:
+                ev["requeued"] = False
+                ev["swept"] = None
+                ev["sweep_error"] = sweep_err
+            return ev
     if env_death:
         # c6 law, second half (ba42841 lesson, wave-2 2026-09-21): with
         # the heir budget spent, an environmental death is never a fix
@@ -631,10 +710,11 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         # live; one rebase retry covers one collision, not two). Requeue
         # per the c6 machinery — heir bounded — instead of pushing a
         # fixed:true verdict the substrate contradicts.
-        if heirs_count(ORIGIN, task) < int(
-            os.environ.get("SWARM_HEIR_MAX", "1")
-        ):
-            swept = sweep(ORIGIN, task)
+        budget_fresh, gate_err = _heir_gate(task)
+        if gate_err is not None:
+            # wave-13: the origin died between the dispatch and the
+            # return push — the same honest record (claim stays live
+            # for reconcile's TTL), never a crash with no accounting.
             return {
                 "event": "attempted",
                 "worker": worker,
@@ -649,10 +729,37 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "main_push": False,
                 "return_pushed": False,
                 "verdict_pushed": False,
-                "requeued": bool(swept["archived"]),
-                "swept": swept["att"] if swept["archived"] else None,
+                "requeued": False,
+                "swept": None,
+                "sweep_error": gate_err,
                 "reason": "main_push_rejected",
             }
+        if budget_fresh:
+            swept, sweep_err = _guarded_sweep(task)
+            ev = {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "fixed": False,
+                "pytest_rc": pr.returncode,
+                "oc_rc": oc_rc,
+                "oc_err": "",
+                "env_death": False,
+                "heir_exhausted": False,
+                "main_push": False,
+                "return_pushed": False,
+                "verdict_pushed": False,
+            }
+            if sweep_err is None:
+                ev["requeued"] = bool(swept["archived"])
+                ev["swept"] = swept["att"] if swept["archived"] else None
+            else:
+                ev["requeued"] = False
+                ev["swept"] = None
+                ev["sweep_error"] = sweep_err
+            ev["reason"] = "main_push_rejected"
+            return ev
         fixed = False  # heirs exhausted: final honest verdict below
     if fixed:
         lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
@@ -1312,12 +1419,14 @@ def origin_commit_ts(origin: str, ref_or_sha: str) -> float | None:
 
 def audit(only: list | None = None) -> None:
     current_origin = os.environ.get("SWARM_ORIGIN", ORIGIN)
-    have = {}
-    for ln in remote().stdout.splitlines():
-        if not ln.strip():
-            continue
-        sha, ref = ln.split()
-        have[ref] = sha
+    # wave-13 (INT-013, 2026-09-29): the board read is rc-CHECKED — the
+    # UNCHECKED remote() let a dead origin yield an empty have → empty A
+    # → h1_pass true. Wave 12 had just made an empty board read HEALTHY
+    # (correctly, for a reachable idle board), so composed the two made
+    # audit the worst instrument on the wall: blind → empty → healthy.
+    # The operator's primary health instrument never certifies a board
+    # it cannot see (the wave-11 law, applied to the instrument itself).
+    have = require_remote(current_origin)
 
     def body(ref):
         if ref not in have:
