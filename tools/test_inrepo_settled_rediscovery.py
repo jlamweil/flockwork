@@ -241,3 +241,36 @@ def test_main_advance_during_attempt_still_heals_return_ref(lane):
                 "main").returncode == 0
     rec = inrepo.reconcile(o, ttl_s=1800)
     assert rec["healthy"] == [TASK]
+
+
+# ------------------------------------------------- wave 8 (zombie seed)
+
+def test_seed_refuses_at_sign_task_names_instead_of_zombieing(lane, monkeypatch):
+    """Wave 8 (INT-013, 2026-09-29): the archive-marker law embeds @att
+    in refnames, so every lane read (open_tasks, sweep, audit) excludes
+    @-carrying refs — but seed() pushed specs for ANY json key. An
+    @-named task seeded today becomes a PERMANENT zombie: the spec ref
+    lands (seeded:true), open_tasks never shows it, and its claim is
+    un-sweepable (sweep's live list filters @). Refuse loudly at the
+    entry points instead (seed + claim_detail defense in depth).
+
+    HERMETICITY (incident #2, disclosed in the wave-8 commit): seed()
+    and claim_detail() push via the module-level ORIGIN (no explicit
+    origin parameter), so this test MUST re-point inrepo.ORIGIN at the
+    local bare origin — the first cut ran in-parent and seeded the fake
+    tasks onto the real example-host-a origin (contained: both refs deleted
+    within minutes, zero claims ever existed)."""
+    o, w, stub = lane
+    monkeypatch.setattr(inrepo, "ORIGIN", o)
+    spec = {TASK: f"spec {TASK}\nverify: true", "a@b": "spec a@b"}
+    sp = stub / "spec.json"
+    sp.write_text(json.dumps(spec))
+    res = inrepo.seed(str(sp))
+    assert res[TASK] is True                   # safe names still seed
+    assert str(res["a@b"]).startswith("refused")  # hostile name refused
+    assert "refs/swarm/specs/a@b" not in _refs(o)
+    assert f"refs/swarm/specs/{TASK}" in _refs(o)
+    # defense in depth: a direct claim of an @-name cannot land either
+    d = inrepo.claim_detail("w1", "a@b")
+    assert d["att"] is None
+    assert "refs/swarm/claims/a@b" not in _refs(o)

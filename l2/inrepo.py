@@ -134,6 +134,27 @@ def empty_tree():
     return git("hash-object", "-t", "tree", "/dev/null").stdout.strip()
 
 
+# wave-8 (INT-013, 2026-09-29): the archive-marker law embeds @att in
+# refnames, so every lane read (open_tasks, sweep, audit) excludes
+# @-carrying refs BY DESIGN. A task name carrying @ would seed/claim a
+# ref no lane machinery can ever see or sweep — a permanent zombie
+# (seeded:true, invisible to open_tasks, un-sweepable). Refuse at the
+# entry points instead of quietly creating invisible state.
+
+
+def task_name_is_safe(task: str) -> bool:
+    """Task names become refname components; '@' is the archive-marker
+    separator (refs/swarm/.../task@att) and must never appear in a LIVE
+    task name."""
+    return isinstance(task, str) and "@" not in task
+
+
+_BAD_TASK_MSG = (
+    "refused: task names carry no '@' (archive-marker law — an "
+    "@-named task would be invisible to every lane read and un-sweepable)"
+)
+
+
 def verdict_body(
     task: str, att: str, fixed: bool, host: str, oc_rc: int, pytest_rc: int
 ) -> str:
@@ -158,6 +179,9 @@ def seed(spec_path: str) -> dict:
     et = empty_tree()
     R = {}
     for task, brief in sorted(spec.items()):
+        if not task_name_is_safe(task):
+            R[task] = "refused: " + _BAD_TASK_MSG
+            continue
         c_sha, c_proc = commit_tree(et, "-m", f"spec {task}\n\n{brief}")
         r = push_sha_ref(c_sha, f"refs/swarm/specs/{task}",
                          lease=False, failed=c_proc)
@@ -177,6 +201,10 @@ def claim_detail(worker: str, task: str) -> dict:
     — the same honesty the scan side owes: measured 2026-09-20,
     addendum 4)."""
     att = f"att-{worker}-{os.urandom(3).hex()}"
+    if not task_name_is_safe(task):
+        # wave-8 defense in depth: classify_claim_failure maps rc 128 to
+        # 'structural', so the worker stops honestly instead of spinning.
+        return {"att": None, "rc": 128, "stderr": _BAD_TASK_MSG}
     c_sha, c_proc = commit_tree(empty_tree(), "-m", f"claim {task} {att}")
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
     r = push_sha_ref(c_sha, f"refs/swarm/claims/{task}", failed=c_proc)
