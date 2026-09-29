@@ -848,17 +848,41 @@ def worker(name: str, only: list | None = None) -> bool:
 # -------------------------------------------------------------- sweep
 
 
+def require_remote(origin: str) -> dict:
+    """ls-remote with the rc CHECKED (wave 11, INT-013, 2026-09-29).
+    An unreachable origin RAISES — 'queue empty' and 'cannot see the
+    queue' must not look alike (open_tasks' law, 2026-09-20, extended
+    to every automation read). Pre-fix, sweep/reconcile/correction_graph
+    /relabel_orphan_archives parsed stdout without the rc: a dead origin
+    yielded an empty dict and each returned a SUCCESS-SHAPED EMPTY
+    result — sweep a silent no-op, reconcile a clean empty census,
+    correction_graph an empty graph (decision-grade: the INT-032 frozen
+    rule reads 'FALSIFIED iff all chains single-vertex', so a network
+    blip during the two-model window would have graded the substrate
+    falsified), relabel a quiet no-op. Callers that genuinely tolerate
+    an absent origin call git() directly and classify the failure
+    themselves (origin_body's degraded-read law)."""
+    r = git("ls-remote", origin)
+    if not ok(r):
+        raise RuntimeError(
+            f"origin unreachable: {(r.stderr or r.stdout or '').strip()[:200]}"
+        )
+    have = {}
+    for ln in r.stdout.splitlines():
+        if ln.strip():
+            sha, ref = ln.split()
+            have[ref] = sha
+    return have
+
+
 def sweep(origin: str, task: str, att: str | None = None) -> dict:
     """Archive every live refs/swarm/{claims,tasks,verdicts}/<task> to
     refs/swarm/archive/<kind>/<task>@<att> and delete the live refs in
     ONE transaction (push --atomic; L3/c8 @-law). att defaults to the
     claim commit body's last token. Idempotent: nothing live -> empty
-    lists, no refs written."""
-    have = {}
-    for ln in git("ls-remote", origin).stdout.splitlines():
-        if ln.strip():
-            sha, ref = ln.split()
-            have[ref] = sha
+    lists, no refs written. Raises RuntimeError on an unreachable
+    origin — never a success-shaped empty result (wave 11)."""
+    have = require_remote(origin)
     live = [
         (kind, ref, have[ref])
         for kind in ("claims", "tasks", "verdicts")
@@ -949,11 +973,7 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
     """
     if ttl_s is None:
         ttl_s = float(os.environ.get("SWARM_LEASE_TTL", "1800"))
-    have = {}
-    for ln in git("ls-remote", origin).stdout.splitlines():
-        if ln.strip():
-            sha, ref = ln.split()
-            have[ref] = sha
+    have = require_remote(origin)
     tasks = sorted(
         r[len("refs/swarm/claims/") :]
         for r in have
@@ -1165,12 +1185,9 @@ def relabel_orphan_archives(origin: str) -> dict:
     queryable). Same sha at the new name + delete the old, ONE atomic
     push per ref. Never overwrites an existing target and never guesses
     — a ref with no att-* token in its body is skipped and flagged, so
-    a dry-minded caller can rerun relabel after fixing the bodies."""
-    have = {}
-    for ln in git("ls-remote", origin).stdout.splitlines():
-        if ln.strip():
-            sha, ref = ln.split()
-            have[ref] = sha
+    a dry-minded caller can rerun relabel after fixing the bodies. An
+    unreachable origin raises (wave 11) — never a quiet no-op."""
+    have = require_remote(origin)
     out = {"origin": origin, "relabeled": [], "skipped": [], "errors": []}
     for ref, sha in sorted(have.items()):
         m = re.match(r"^(refs/swarm/archive/.+@)(.+)$", ref)
@@ -1405,12 +1422,10 @@ def correction_graph(origin: str) -> dict:
     attribution comes from mm_model_of on the att token: refs + commit
     objects must carry the whole story — no ledger, no env, no log.
 
-    Read-only: ls-remote + origin object reads, never a ref write."""
-    have = {}
-    for ln in git("ls-remote", origin).stdout.splitlines():
-        if ln.strip():
-            sha, ref = ln.split()
-            have[ref] = sha
+    Read-only: ls-remote + origin object reads, never a ref write. An
+    unreachable origin raises (wave 11) — an empty graph must mean an
+    empty substrate, never a dead connection."""
+    have = require_remote(origin)
     tasks = sorted(
         r[len("refs/swarm/specs/") :]
         for r in have
