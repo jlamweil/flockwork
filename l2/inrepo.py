@@ -337,22 +337,89 @@ def work_task(worker: str, task: str, att: str) -> dict:
 def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     r = git("clone", "-q", ORIGIN, tree)
     if not ok(r):
-        ev = {
+        # wave-15 (INT-013, 2026-09-29): the c6 one-heir budget gates the
+        # CLONE leg exactly as it gates the spec-death legs (wave 10) and
+        # the post-dispatch legs (wave 13). The unconditional sweep was
+        # the wave-10 DISCLOSED asymmetry: a permanently unclonable task
+        # (disk-full/quota on the worker host, a tree carrying a path the
+        # local fs rejects, a corrupted object) churned claim→clone-fail
+        # →sweep→requeue FOREVER — no TTL backstop (the claim is freed at
+        # once, so reconcile never sees a stale claim), no final verdict
+        # ever surfacing, one archive ref per cycle. Only the TRANSIENT
+        # half of the class self-heals — so the first death still requeues
+        # (the environment may heal), and under a spent budget the path
+        # writes the honest final fixed:false verdict (oc_rc 1 — no usable
+        # dispatch leg, never 0 which reads as merit; pytest_rc plain 1 —
+        # the oracle never ran; main + tasks ref untouched per the wave-2
+        # heir-exhausted law). An origin death MID-CLONE keeps the wave-13
+        # structured shape — the gate itself unevaluatable is recorded
+        # (claim live for reconcile), never a crash, never the lie-0.
+        budget_fresh, gate_err = _heir_gate(task)
+        if gate_err is not None:
+            # wave-13 shape parity: the sibling requeue legs carry
+            # requeued/swept/sweep_error keys; this leg's origin-death
+            # event lacked them (found by the wave-15 contract).
+            return {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "env_death": True,
+                "reason": f"clone: {r.stderr[:200]}",
+                "requeued": False,
+                "swept": None,
+                "sweep_error": gate_err,
+            }
+        if budget_fresh:
+            ev = {
+                "event": "attempted",
+                "worker": worker,
+                "task": task,
+                "att": att,
+                "env_death": True,
+                "reason": f"clone: {r.stderr[:200]}",
+            }
+            swept, sweep_err = _guarded_sweep(task)
+            if sweep_err is None:
+                ev["requeued"] = bool(swept["archived"])
+                ev["swept"] = swept["att"] if swept["archived"] else None
+            else:
+                ev["requeued"] = False
+                ev["swept"] = None
+                ev["sweep_error"] = sweep_err
+            return ev
+        # budget spent: ONLY the final verdict is written — the claim
+        # stays LIVE (the wave-10 law this mirrors: sweeping here would
+        # re-open the churn at full speed — claim+verdict archived → the
+        # task instantly re-enters open_tasks → claim again, forever;
+        # the live claim is exactly what keeps the task out of the queue
+        # until reconcile's TTL re-lease, the lane's deliberate slow
+        # path), main and the tasks ref stay untouched.
+        et = empty_tree()
+        v_sha, v_proc = commit_tree(
+            et,
+            "-m",
+            verdict_body(task, att, False, worker, 1, 1),
+        )
+        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc)
+        return {
             "event": "attempted",
             "worker": worker,
             "task": task,
             "att": att,
+            "fixed": False,
+            "pytest_rc": 1,
+            "oc_rc": 1,
+            "oc_err": "",
             "env_death": True,
-            "reason": f"clone: {r.stderr[:200]}",
+            "heir_exhausted": True,
+            "main_push": False,
+            "return_pushed": False,
+            "verdict_pushed": ok(r3),
+            "requeued": None,
+            "swept": None,
+            "reason": "clone_heir_exhausted",
         }
-        try:
-            swept = sweep(ORIGIN, task)
-            ev["requeued"] = bool(swept["archived"])
-            ev["swept"] = swept["att"] if swept["archived"] else None
-        except RuntimeError as e:
-            ev["requeued"] = False
-            ev["sweep_error"] = str(e)[:200]
-        return ev
 
     def _env_death_before_dispatch(reason: str, err: str) -> dict:
         """The attempt died between claim and dispatch (clone failure or,
