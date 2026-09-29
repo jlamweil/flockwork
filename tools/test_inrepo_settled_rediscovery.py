@@ -1,0 +1,190 @@
+"""Operator-authored contract for settled-task rediscovery (wave 6,
+INT-013, 2026-09-29). The correction-graph law (test_correction_graph_
+spec) pins reconcile's TTL re-lease of merit-failed tasks — a fixed:
+false verdict does not keep its claim alive forever. The unpinned
+sibling shape is the SETTLED task: verdict fixed:true whose return ref
+was lost (r2 transient failure after main_push landed) or never
+written. reconcile files it as claim+verdict-no-return, sweeps it, the
+task re-enters open_tasks, and the rediscovering attempt finds the fix
+ALREADY on main — the oracle passes on an unchanged tree.
+
+On the unmodified tree the success path then commits --allow-empty and
+publishes a new empty "fix <task>" commit to main: the ba42841
+substrate-lie class (main history claiming a fix the tree never had)
+reopened through the re-lease route. The commit must never be created;
+the return ref is pointed at the main tip that already carries the
+work, and the verdict records the attempt honestly.Contract (local bare origin + stub dispatch, no fleet; oracle `true`,
+  dispatch writes nothing):
+  - settled shape swept by reconcile → rediscovered work_task:
+    origin main tip UNCHANGED (no empty fix commit), the return ref is
+    created at the existing main tip, the rediscovery attempt's own
+    fixed:true verdict replaces the swept original (create-once with a
+    live claim — the same re-lease law the CG cycle depends on), event
+    says fixed:true with already_on_main recorded
+  - the healed shape is healthy on the next reconcile (no treadmill:
+    the task never re-sweeps)
+"""
+import importlib.util
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+import pytest
+
+REPO = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _load():
+    p = pathlib.Path(REPO / "l2" / "inrepo.py")
+    spec = importlib.util.spec_from_file_location("inrepo", p)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+inrepo = _load()
+
+
+def _git(*a, cwd=None, env=None):
+    return subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True,
+                          env=env)
+
+
+def _cid():
+    return "-c", "user.email=a@b", "-c", "user.name=a"
+
+
+def _root_commit(w, msg, age_s=None):
+    """Root commit with a controlled committer date (None = now)."""
+    et = _git("-C", w, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
+    env = None
+    if age_s is not None:
+        import time
+
+        past = f"@{int(time.time() - age_s)} +0000"
+        env = dict(os.environ, GIT_COMMITTER_DATE=past, GIT_AUTHOR_DATE=past)
+    return _git("-C", w, *_cid(), "commit-tree", et, "-m", msg,
+                env=env).stdout.strip()
+
+
+def _push(o, w, src, ref):
+    r = _git("-C", w, *_cid(), "push", "-q", o, f"{src}:{ref}")
+    assert r.returncode == 0, r.stderr
+
+
+DRIVER = (
+    "import importlib.util, json, sys;"
+    "spec = importlib.util.spec_from_file_location('inrepo', 'l2/inrepo.py');"
+    "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m);"
+    "print(json.dumps(m.work_task(sys.argv[1], sys.argv[2], sys.argv[3])))"
+)
+
+
+def _run_work_task(env_extra, task, att, worker="w2"):
+    env = dict(os.environ, **env_extra)
+    r = subprocess.run(
+        [sys.executable, "-c", DRIVER, worker, task, att],
+        cwd=REPO, capture_output=True, text=True, env=env, timeout=300,
+    )
+    assert r.returncode == 0, r.stderr[-400:]
+    return json.loads(r.stdout.strip().splitlines()[-1])
+
+
+@pytest.fixture
+def lane(tmp_path):
+    o = tmp_path / "origin.git"
+    _git("init", "-q", "--bare", str(o))
+    _git("-C", str(o), "symbolic-ref", "HEAD", "refs/heads/main")
+    w = tmp_path / "w"
+    _git("init", "-q", "-b", "main", str(w))
+    (w / "f.txt").write_text("x\n")
+    _git("-C", str(w), "add", "-A")
+    _git("-C", str(w), *_cid(), "commit", "-qm", "seed")
+    _git("-C", str(w), *_cid(), "push", "-q", str(o), "main")
+    stub = tmp_path / "stub"
+    stub.mkdir()
+    return str(o), str(w), stub
+
+
+TASK = "T-settled"
+
+
+def _seed_settled(o, w, stub):
+    """The settled shape: spec + claim + fixed:true verdict, NO return
+    ref — main already carries the fix (the seed commit itself passes
+    the `true` oracle)."""
+    spec = _root_commit(w, f"spec {TASK}\nverify: true")
+    _push(o, w, spec, f"refs/swarm/specs/{TASK}")
+    att1 = "att-w1-settl1"
+    _push(o, w, _root_commit(w, f"claim {TASK} {att1}", age_s=7200),
+          f"refs/swarm/claims/{TASK}")
+    _push(o, w, _root_commit(
+        w, f"verdict\ntask: {TASK}\nattempt: {att1}\nfixed: true\n"
+           f"host: h1\noc_rc: 0\npytest_rc: 0"),
+        f"refs/swarm/verdicts/{TASK}")
+    p = stub / "opencode"
+    p.write_text("#!/bin/bash\nexit 0\n")  # dispatch 'works', writes nothing
+    os.chmod(p, 0o755)
+    return att1
+
+
+def _refs(o):
+    return _git("ls-remote", o).stdout
+
+
+def _claim(o, w, task, att):
+    """The worker-loop claim step: a root claim commit on the CAS ref."""
+    _push(o, w, _root_commit(w, f"claim {task} {att}"),
+          f"refs/swarm/claims/{task}")
+
+
+def test_rediscovered_settled_task_never_publishes_empty_fix(lane):
+    o, w, stub = lane
+    att1 = _seed_settled(o, w, stub)
+    tip_before = _git("-C", o, "rev-parse", "main").stdout.strip()
+    # the re-lease law frees the claim (reconcile sweep == archive+free)
+    inrepo.sweep(o, TASK)
+    assert f"refs/swarm/claims/{TASK}" not in _refs(o)
+    # a fresh worker claims and rediscovers the settled task
+    att2 = "att-w2-redis1"
+    _claim(o, w, TASK, att2)
+    ev = _run_work_task(
+        dict(SWARM_ORIGIN=o, OPENCODE_BIN=str(stub / "opencode"),
+             SWARM_MODEL="stub/model"),
+        TASK, att2,
+    )
+    assert ev["fixed"] is True and ev["already_on_main"] is True
+    assert ev["verdict_pushed"] is True  # own claim: CG re-lease law
+    tip_after = _git("-C", o, "rev-parse", "main").stdout.strip()
+    assert tip_after == tip_before, "empty fix commit landed on main"
+    refs = _refs(o)
+    # the return ref heals at the EXISTING main tip — no new commit
+    tasks_line = [ln for ln in refs.splitlines()
+                  if ln.endswith(f"refs/swarm/tasks/{TASK}")]
+    assert tasks_line, "return ref not created"
+    assert tasks_line[0].split()[0] == tip_before
+    # the live verdict is the rediscovery attempt's own, honest record
+    body = inrepo.origin_body(o, f"refs/swarm/verdicts/{TASK}")
+    assert f"attempt: {ev['att']}" in body and "fixed: true" in body
+
+
+def test_reconcile_re_lease_of_settled_task_converges_healthy(lane):
+    o, w, stub = lane
+    _seed_settled(o, w, stub)
+    rec = inrepo.reconcile(o, ttl_s=1.0)
+    assert rec["swept"] == ["att-w1-settl1"]  # the re-lease fires (CG law)
+    tip_before = _git("-C", o, "rev-parse", "main").stdout.strip()
+    _claim(o, w, TASK, "att-w2-redis2")
+    ev = _run_work_task(
+        dict(SWARM_ORIGIN=o, OPENCODE_BIN=str(stub / "opencode"),
+             SWARM_MODEL="stub/model"),
+        TASK, "att-w2-redis2",
+    )
+    assert ev["fixed"] is True and ev["already_on_main"] is True
+    assert _git("-C", o, "rev-parse", "main").stdout.strip() == tip_before
+    # healed: claim+return+verdict all live → healthy, never re-swept
+    rec2 = inrepo.reconcile(o, ttl_s=1.0)
+    assert rec2["healthy"] == [TASK]
+    assert rec2["swept"] == [] and rec2["stale"] == []

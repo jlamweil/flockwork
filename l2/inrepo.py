@@ -457,16 +457,38 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # workers push main too — on non-FF, rebase onto origin and retry
     # (reached only when the oracle PASSED — the publish is earned)
     git("-C", tree, "add", "-A")
-    git(
-        "-C",
-        tree,
-        "commit",
-        "-q",
-        "--allow-empty",
-        "-m",
-        f"fix {task}\n\nAttempt: {att}",
-    )
-    r1 = git("-C", tree, "push", "-q", ORIGIN, "HEAD:main")
+    # wave-6 (INT-013, 2026-09-29): the oracle may PASS on an unchanged
+    # tree. The rediscovered SETTLED task shape (fixed:true verdict
+    # whose return ref was lost; reconcile's TTL re-lease freed the
+    # claim — the CG correction-cycle law) re-runs with the fix ALREADY
+    # on main, and any oracle-true no-op attempt lands here too. The old
+    # unconditional --allow-empty commit published a NEW empty "fix"
+    # commit to main: the ba42841 substrate-lie class (main claiming a
+    # fix the tree never had) reopened through the re-lease route.
+    # Never CREATE a commit in this shape: main already satisfies the
+    # task's success criterion, so the return ref is pointed at main's
+    # CURRENT tip and the verdict records the attempt honestly.
+    no_diff = git("-C", tree, "status", "--porcelain").stdout.strip() == ""
+    tip = None
+    if no_diff:
+        r1 = subprocess.CompletedProcess(
+            args=["git", "push"], returncode=0, stdout="",
+            stderr="(no-diff oracle pass) main untouched; no commit created",
+        )
+        ls = git("ls-remote", ORIGIN, "refs/heads/main")
+        if ls.stdout.strip():
+            tip = ls.stdout.split()[0]
+    else:
+        git(
+            "-C",
+            tree,
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            f"fix {task}\n\nAttempt: {att}",
+        )
+        r1 = git("-C", tree, "push", "-q", ORIGIN, "HEAD:main")
     if not ok(r1):
         rr = git("-C", tree, "pull", "-q", "--rebase", ORIGIN, "main")
         if ok(rr):
@@ -502,9 +524,20 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         fixed = False  # heirs exhausted: final honest verdict below
     if fixed:
         lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
-        r2 = git(
-            "-C", tree, "push", "-q", lease, ORIGIN, f"HEAD:refs/swarm/tasks/{task}"
-        )
+        if no_diff and not tip:
+            # no main tip to point the return at (origin has no main):
+            # withhold the return ref — never an empty-refspec push
+            # (the phantom-deletion class push_sha_ref guards).
+            r2 = subprocess.CompletedProcess(
+                args=["git", "push"], returncode=128, stdout="",
+                stderr="no main tip on origin: return ref withheld",
+            )
+        else:
+            src = tip if tip is not None else "HEAD"
+            r2 = git(
+                "-C", tree, "push", "-q", lease, ORIGIN,
+                f"{src}:refs/swarm/tasks/{task}",
+            )
     else:
         # INT-015 (wave-4 disclosed round-6 path, closed 2026-09-28):
         # heirs exhausted on a rejected main push → ONLY the final
@@ -538,7 +571,8 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         "oc_err": oc_err,
         "env_death": env_death,
         "heir_exhausted": env_death,
-        "main_push": ok(r1),
+        "main_push": ok(r1) and not no_diff,
+        "already_on_main": no_diff,
         "return_pushed": r2 is not None and ok(r2),
         "verdict_pushed": ok(r3),
     }
