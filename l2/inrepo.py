@@ -1104,7 +1104,21 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
         if has_t and has_v:
             out["healthy"].append(t)
             continue
-        ts = origin_commit_ts(origin, f"refs/swarm/claims/{t}")
+        # wave-14 (INT-013, 2026-09-29): the claim is board-visible
+        # (the require_remote census listed it), so a failed object read
+        # is a broken board, never "undateable". The strict read raises
+        # and the failure lands in `errors` (retry-able — the next
+        # healthy reconcile sweeps) instead of `anomalies` (the
+        # permanent misclassification that silenced the lane's only TTL
+        # backstop while reads failed). A genuinely malformed object
+        # (read succeeds, no committer line) stays the honest anomaly.
+        try:
+            ts = _committer_ts_from_raw(
+                _origin_raw_strict(origin, f"refs/swarm/claims/{t}")
+            )
+        except RuntimeError as e:
+            out["errors"].append({"task": t, "err": str(e)[:200]})
+            continue
         if ts is None:
             out["anomalies"].append(
                 {"task": t, "reason": "claim object undateable; not swept"}
@@ -1373,24 +1387,80 @@ def ssh_target(origin: str):
     return None
 
 
-def origin_raw(origin: str, ref_or_sha: str) -> str:
-    """Full `cat-file -p` output of an object, read on the ORIGIN host
-    (T5 law: the auditor's clone may lack freshly pushed objects)."""
-    if not ref_or_sha:
-        return ""
+def _origin_raw_proc(origin: str, ref_or_sha: str):
+    """The `cat-file -p` read behind origin_raw, as the raw proc so the
+    rc survives (wave 14: the degraded wrapper discards it)."""
     origin = origin or os.environ.get("SWARM_ORIGIN", ORIGIN)
     tgt = ssh_target(origin)
     if tgt is not None:
         _host, _port, _path = tgt
         cmd = _ssh_cmd(_host, _port,
                        "git", "-C", _path, "cat-file", "-p", ref_or_sha)
-        r = sh(cmd)
-        return r.stdout if ok(r) else ""
+        return sh(cmd)
     path = origin
     if origin.startswith("file://"):
         path = urlparse(origin).path
-    r = git("cat-file", "-p", ref_or_sha, cwd=path)
+    return git("cat-file", "-p", ref_or_sha, cwd=path)
+
+
+def origin_raw(origin: str, ref_or_sha: str) -> str:
+    """Full `cat-file -p` output of an object, read on the ORIGIN host
+    (T5 law: the auditor's clone may lack freshly pushed objects).
+
+    Degraded-read law (frozen, test_inrepo_origin_body): anything
+    unreadable — absent ref, failed read — returns "". Callers that
+    have ALREADY established board visibility (the ref is in a
+    require_remote census) and judge on the result use the strict
+    reads (wave 14, _origin_raw_strict/_origin_body_strict): for a
+    board-visible object, "" from a failed read is a lie at every
+    decision-grade consumer (correction_graph's INT-032 frozen rule,
+    audit's H1, reconcile's TTL dating)."""
+    if not ref_or_sha:
+        return ""
+    r = _origin_raw_proc(origin or os.environ.get("SWARM_ORIGIN", ORIGIN),
+                         ref_or_sha)
     return r.stdout if ok(r) else ""
+
+
+def _origin_raw_strict(origin: str, ref_or_sha: str) -> str:
+    """Object read with the rc ENFORCED (wave 14, INT-013, 2026-09-29).
+    Raises RuntimeError naming the failed read instead of returning
+    "" — for a board-visible ref an unreadable object is a broken
+    board, never an empty body. Callers pass refs they have already
+    seen on the board (require_remote census); board-absence is the
+    caller's design, handled by the `ref in have` guards (the frozen
+    origin_body empty-for-missing-ref law is untouched)."""
+    r = _origin_raw_proc(origin or os.environ.get("SWARM_ORIGIN", ORIGIN),
+                         ref_or_sha)
+    if not ok(r):
+        raise RuntimeError(
+            f"origin object read failed: {ref_or_sha} on {origin}: "
+            f"{(r.stderr or r.stdout or '').strip()[:200]}"
+        )
+    return r.stdout
+
+
+def _origin_body_strict(origin: str, ref_or_sha: str) -> str:
+    """origin_body semantics (tree-header stripped) with the strict rc
+    law of _origin_raw_strict."""
+    raw = _origin_raw_strict(origin, ref_or_sha)
+    if raw.startswith("tree "):
+        _, sep, message = raw.partition("\n\n")
+        if sep:
+            return message
+    return raw
+
+
+def _committer_ts_from_raw(raw: str) -> float | None:
+    """Committer epoch from `cat-file -p` output; None when undateable."""
+    for ln in raw.splitlines():
+        if ln.startswith("committer "):
+            parts = ln.split()
+            try:
+                return float(parts[-2])
+            except (ValueError, IndexError):
+                return None
+    return None
 
 
 def origin_body(origin: str, ref_or_sha: str) -> str:
@@ -1406,15 +1476,10 @@ def origin_body(origin: str, ref_or_sha: str) -> str:
 def origin_commit_ts(origin: str, ref_or_sha: str) -> float | None:
     """Committer epoch of a commit object, read on the origin host.
     None when the object is missing/undateable — callers must treat
-    None as 'cannot judge age', never as 'old'."""
-    for ln in origin_raw(origin, ref_or_sha).splitlines():
-        if ln.startswith("committer "):
-            parts = ln.split()
-            try:
-                return float(parts[-2])
-            except (ValueError, IndexError):
-                return None
-    return None
+    None as 'cannot judge age', never as 'old'. (A failed read also
+    lands here as None — degraded; reconcile's dating read uses the
+    strict path and records the failure instead, wave 14.)"""
+    return _committer_ts_from_raw(origin_raw(origin, ref_or_sha))
 
 
 def audit(only: list | None = None) -> None:
@@ -1428,22 +1493,35 @@ def audit(only: list | None = None) -> None:
     # it cannot see (the wave-11 law, applied to the instrument itself).
     have = require_remote(current_origin)
 
-    def body(ref):
-        if ref not in have:
-            return ""
-        return origin_body(current_origin, ref)
-
     tasks = only or sorted(
         t[len("refs/swarm/specs/") :] for t in have if t.startswith("refs/swarm/specs/")
     )
     A = {}
     for t in tasks:
-        att_c = (
-            body(f"refs/swarm/claims/{t}").strip().split()[-1]
-            if f"refs/swarm/claims/{t}" in have
-            else None
-        )
-        vbody = body(f"refs/swarm/verdicts/{t}")
+        c_ref = f"refs/swarm/claims/{t}"
+        v_ref = f"refs/swarm/verdicts/{t}"
+        # wave-14 (INT-013, 2026-09-29): board-visible object reads are
+        # STRICT. Degraded, a failed verdict read graded a HEALTHY
+        # claimed task VIOLATED (vbody="" → verdict None — the wave-12
+        # inverse) and a failed claim read crashed IndexError on the
+        # att extraction — the instrument condemned (or crashed on) a
+        # board it could not see. The wave-13 law covers the instrument:
+        # audit never judges, either way, on a read it does not know.
+        try:
+            att_c = (
+                _origin_body_strict(current_origin, c_ref).strip().split()[-1]
+                if c_ref in have
+                else None
+            )
+            vbody = (
+                _origin_body_strict(current_origin, v_ref)
+                if v_ref in have
+                else ""
+            )
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"audit cannot see the board: {e}"
+            ) from None
         vd = {}
         for ln in vbody.splitlines():
             if ":" in ln:
@@ -1553,7 +1631,17 @@ def correction_graph(origin: str) -> dict:
         v_att = None
         vref = f"refs/swarm/verdicts/{t}"
         if vref in have:
-            for ln in origin_body(origin, vref).splitlines():
+            # wave-14 (INT-013, 2026-09-29): strict reads — the verdict
+            # ref is board-visible, so a failed object read is a broken
+            # board, never "no attempt line". The DEGRADED read turned a
+            # read blip into a success-shaped INCOMPLETE graph: the
+            # verdict vertex (and its 'final' flag) silently dropped,
+            # and under the INT-032 frozen rule ("FALSIFIED iff all
+            # chains single-vertex") the two-model window could grade
+            # the substrate falsified on a dead read. The blind graph
+            # must not exist (the wave-11 law, one layer down).
+            vraw = _origin_body_strict(origin, vref)
+            for ln in vraw.splitlines():
                 k, _, val = ln.partition(":")
                 if k.strip() == "attempt":
                     v_att = val.strip()
@@ -1564,7 +1652,8 @@ def correction_graph(origin: str) -> dict:
         ]
         cref = f"refs/swarm/claims/{t}"
         if cref in have:
-            cand = origin_body(origin, cref).strip().split()
+            # wave-14: strict read (board-visible ref) — same law.
+            cand = _origin_body_strict(origin, cref).strip().split()
             if cand and cand[-1].startswith("att-"):
                 raw.append((cand[-1], cref))
         if v_att and v_att not in [a for a, _ in raw]:
@@ -1574,7 +1663,13 @@ def correction_graph(origin: str) -> dict:
             attempts.append(
                 {
                     "att": att,
-                    "ts": origin_commit_ts(origin, ref),
+                    # wave-14: strict dating — an undateable ATTEMPT
+                    # sorts last, deterministically by att (the honest
+                    # degraded read for a malformed object); a FAILED
+                    # read raises like every other object read here.
+                    "ts": _committer_ts_from_raw(
+                        _origin_raw_strict(origin, ref)
+                    ),
                     "model": mm_model_of(att),
                     "final": att == v_att,
                 }
