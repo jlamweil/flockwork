@@ -467,7 +467,17 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # fix the tree never had) reopened through the re-lease route.
     # Never CREATE a commit in this shape: main already satisfies the
     # task's success criterion, so the return ref is pointed at main's
-    # CURRENT tip and the verdict records the attempt honestly.
+    # tip and the verdict records the attempt honestly.
+    # Wave-7 (2026-09-29): the tip comes from the attempt's OWN clone
+    # (refs/remotes/origin/main, fetched at clone time — V12: the sha
+    # comes from the worker's own records, never a fresh remote read).
+    # The first cut ls-remote'd main and pushed that sha from the clone,
+    # which never fetched it: when main advanced during the attempt (a
+    # concurrent rediscoverer), the return push failed (`not our ref`),
+    # return_pushed came back false for work that IS on main, and the
+    # settled task re-entered the re-lease treadmill. The clone's view
+    # is deterministic, locally resolvable, and the honest "as verified
+    # by this attempt" tip.
     no_diff = git("-C", tree, "status", "--porcelain").stdout.strip() == ""
     tip = None
     if no_diff:
@@ -475,9 +485,10 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             args=["git", "push"], returncode=0, stdout="",
             stderr="(no-diff oracle pass) main untouched; no commit created",
         )
-        ls = git("ls-remote", ORIGIN, "refs/heads/main")
-        if ls.stdout.strip():
-            tip = ls.stdout.split()[0]
+        rv = git("-C", tree, "rev-parse", "refs/remotes/origin/main")
+        cand = rv.stdout.strip()
+        if ok(rv) and cand:
+            tip = cand
     else:
         git(
             "-C",
@@ -525,9 +536,10 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     if fixed:
         lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
         if no_diff and not tip:
-            # no main tip to point the return at (origin has no main):
-            # withhold the return ref — never an empty-refspec push
-            # (the phantom-deletion class push_sha_ref guards).
+            # no resolvable main tip in the attempt's view (origin main
+            # absent/unborn at clone): withhold the return ref — never
+            # an empty-refspec push (the phantom-deletion class
+            # push_sha_ref guards).
             r2 = subprocess.CompletedProcess(
                 args=["git", "push"], returncode=128, stdout="",
                 stderr="no main tip on origin: return ref withheld",

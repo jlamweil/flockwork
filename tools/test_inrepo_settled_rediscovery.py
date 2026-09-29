@@ -188,3 +188,56 @@ def test_reconcile_re_lease_of_settled_task_converges_healthy(lane):
     rec2 = inrepo.reconcile(o, ttl_s=1.0)
     assert rec2["healthy"] == [TASK]
     assert rec2["swept"] == [] and rec2["stale"] == []
+
+
+# ------------------------------------------------------- wave 7 (race)
+
+def test_main_advance_during_attempt_still_heals_return_ref(lane):
+    """Wave 7 (INT-013, 2026-09-29): the no-diff path read origin main's
+    tip with ls-remote and pushed THAT sha from the attempt's clone —
+    which never fetched it. When main advances during the attempt (a
+    concurrent worker lands a commit), the return push fails (`not our
+    ref`), return_pushed comes back false for work that IS on main, and
+    the settled task re-enters the re-lease treadmill. Falsified with a
+    dispatch stub that advances origin main MID-ATTEMPT."""
+    o, w, stub = lane
+    _seed_settled(o, w, stub)
+    seed_tip = _git("-C", o, "rev-parse", "main").stdout.strip()
+    inrepo.sweep(o, TASK)
+    att2 = "att-w3-race01"
+    _claim(o, w, TASK, att2)
+    marker = pathlib.Path(stub) / "concurrent-landed"
+    p = stub / "opencode"
+    p.write_text(
+        "#!/bin/bash\n"
+        "set -e\n"
+        "d=$(mktemp -d)\n"
+        "git clone -q \"$SWARM_ORIGIN\" \"$d/c\"\n"
+        "cd \"$d/c\"\n"
+        "echo concurrent >> f.txt\n"
+        "git -c user.email=c@a -c user.name=c commit -qam 'concurrent B'\n"
+        "git push -q origin main\n"
+        "touch " + str(marker) + "\n"
+        "exit 0\n"
+    )
+    os.chmod(p, 0o755)
+    ev = _run_work_task(
+        dict(SWARM_ORIGIN=o, OPENCODE_BIN=str(p), SWARM_MODEL="stub/model"),
+        TASK, att2,
+    )
+    assert marker.exists(), "stub failed to advance origin main"
+    assert ev["fixed"] is True and ev["already_on_main"] is True
+    assert ev["return_pushed"] is True, "return push lost the tip race"
+    refs = _refs(o)
+    tasks_line = [ln for ln in refs.splitlines()
+                  if ln.endswith(f"refs/swarm/tasks/{TASK}")]
+    assert tasks_line, "return ref not created"
+    # the return ref points at real main-lineage work: the attempt's
+    # own verified view of main (the seed tip), an ANCESTOR of the
+    # concurrent-advanced main — recorded honestly, not re-read
+    tasks_sha = tasks_line[0].split()[0]
+    assert tasks_sha == seed_tip
+    assert _git("-C", o, "merge-base", "--is-ancestor", tasks_sha,
+                "main").returncode == 0
+    rec = inrepo.reconcile(o, ttl_s=1800)
+    assert rec["healthy"] == [TASK]
