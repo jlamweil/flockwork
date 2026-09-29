@@ -1346,17 +1346,25 @@ def audit(only: list | None = None) -> None:
             "verdict": vd.get("fixed"),
             "verdict_att": vd.get("attempt"),
         }
-    # H1: every claimed task has return+verdict with matching att
+    # H1: every CLAIMED task has return+verdict with matching att.
+    # wave-12 (INT-013, 2026-09-29): judged over LIVE CLAIMS, never over
+    # pending work. The old quantification ran `all(...)` over ALL spec
+    # tasks with an empty-board fallback of False, so any task with no
+    # live claim yet — an idle board, or a settled one awaiting its next
+    # re-seed — read h1_pass FALSE: a board where nothing is wrong reads
+    # VIOLATED, the inverse of the 09-20 law that 'queue empty' and
+    # 'cannot see the queue' must not look alike. A task with no live
+    # claim is PENDING, not violating; an empty board is HEALTHY.
     h1 = (
         all(
-            d["claimed"]
-            and d["returned"]
+            d["returned"]
             and d["verdict"] in ("true", "false")
             and d["verdict_att"] == d["claimed"]
             for d in A.values()
+            if d["claimed"]
         )
         if A
-        else False
+        else True
     )
     # claim-orphan observability (2026-09-21): the claim-CAS namespace
     # accepts any ref name, so a claim for a spec-less task can land via
