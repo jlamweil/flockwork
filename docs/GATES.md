@@ -1,7 +1,11 @@
 # GATES — the verdict-count gate (INT-081 bridge, INT-085(b) wave A)
 
-Design only. `l2/inrepo.py` gains the gate as a new verb reusing
-`commit_tree`, `push_sha_ref`, and the create-once CAS shape
+Design, now LANDED: `l2/gates.py` implements this document (its own
+suite, tests/test_gates.py, @ bbc8a3e), and since WQ-032 the law's CLI
+is the single surface for it — `python3 l2/inrepo.py review|gate ...`
+delegates to the module; audit shows `integrated: true` + the flip sha.
+This section's verb sketch below is the design of record for HOW it
+reuses `commit_tree`, `push_sha_ref`, and the create-once CAS shape
 `claim_detail` already uses. When a task's fix accumulates **n-of-m
 independent agreeing verdicts**, an integration ref flips — the
 flock-recon bridge, on our own refs substrate.

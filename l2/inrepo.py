@@ -26,6 +26,13 @@ Usage (run from a worker clone of the origin):
       # differs from origin main's published copy (law-freshness gate;
       # SWARM_ALLOW_DIVERGED=1 bypasses, recorded in the event stream)
   python3 l2/inrepo.py audit [tasks...]   # read-only H1/H2 over refs
+  python3 l2/inrepo.py review <task> <reviewer> <agree|veto>
+      [evidence-ref]   # reviewer verdict, create-once (WQ-032: the
+      # pilot's gate module l2/gates.py through the law's CLI surface;
+      # docs/GATES.md — n-of-m verdicts flip refs/swarm/integrated/<task>)
+  python3 l2/inrepo.py gate <task>   # verdict-count gate: fires iff
+      # count(agree)==n and count(veto)==0 with evidence resolving;
+      # idempotent after a flip
   python3 l2/inrepo.py sweep ORIGIN TASK [ATT]  # archive+free swarm refs
   python3 l2/inrepo.py reconcile [ORIGIN] [TTL_S]  # sweep stale claims
   python3 l2/inrepo.py correction-graph [ORIGIN]  # multi-model attempt
@@ -66,6 +73,21 @@ except ImportError:  # loaded by path (tests, drivers): resolve the sibling
                 return None
 
         metrics = _MetricsNoop()
+
+try:
+    import gates
+except ImportError:  # loaded by path (tests, drivers): resolve the sibling
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import gates
+    except ImportError:
+        # the law file travels without its sibling (staged nodes, lone
+        # inrepo.py copies — the lawgate pattern): the lane BOOTS with
+        # NO gate. Unlike metrics (observe-only), the gate verbs MUTATE
+        # the board, so their fallback is an honest rc-2 refusal at use
+        # — never a success-shaped no-op (the wave-11 law: a mutating
+        # operation that did not happen never reports success).
+        gates = None
 
 ORIGIN = os.environ.get("SWARM_ORIGIN", "ssh://example-host-a/home/you/swarmo-origin.git")
 
@@ -1713,6 +1735,14 @@ def audit(only: list | None = None) -> None:
             "verdict": vd.get("fixed"),
             "verdict_att": vd.get("attempt"),
         }
+        # WQ-032 (INT-085): the verdict-count gate's flip is visible
+        # when it exists — integrated: true + the flip sha. Absence
+        # writes NOTHING: visibility, never a new failure class (h1
+        # and the orphan census are untouched by this field).
+        int_ref = f"refs/swarm/integrated/{t}"
+        if int_ref in have:
+            A[t]["integrated"] = True
+            A[t]["integrated_sha"] = have[int_ref]
     # H1: every CLAIMED task has return+verdict with matching att.
     # wave-12 (INT-013, 2026-09-29): judged over LIVE CLAIMS, never over
     # pending work. The old quantification ran `all(...)` over ALL spec
@@ -1876,6 +1906,50 @@ def correction_graph(origin: str) -> dict:
     return G
 
 
+# ------------------------------------------------ verdict-count gate CLI
+# WQ-032 (INT-085): the pilot's gate module (l2/gates.py) becomes
+# reachable through the law's single CLI surface. THIN delegation only —
+# the module owns the semantics (docs/GATES.md, pinned by its own
+# suite); the law adds no second implementation to drift.
+
+
+def review_cmd(task: str, reviewer: str, outcome: str,
+               evidence: str | None = None) -> int:
+    """`inrepo.py review <task> <reviewer> <agree|veto> [evidence-ref]`
+    — l2.gates.review_verdict, the create-once reviewer verdict at
+    refs/swarm/verdicts/<task>@<reviewer> (the @-law). Same JSON event
+    as the module's own CLI; rc 0 iff the verdict pushed."""
+    if gates is None:
+        print(json.dumps(
+            {"event": "review_verdict", "task": task, "reviewer": reviewer,
+             "outcome": outcome, "pushed": False, "refused": True,
+             "reason": "gate module absent (lone-law copy: l2/gates.py "
+                       "not staged beside the law)"}), flush=True)
+        return 2
+    if evidence is None:
+        evidence = f"refs/swarm/tasks/{task}"
+    ev = gates.review_verdict(task, reviewer, outcome, evidence)
+    return 0 if ev["pushed"] else 1
+
+
+def gate_cmd(task: str) -> int:
+    """`inrepo.py gate <task>` — l2.gates.gate: fires iff
+    count(agree)==n and count(veto)==0 with every counted verdict's
+    evidence ref resolving; the flip is create-once, a re-run after a
+    flip is an honest idempotent no-op. Same JSON event as the module's
+    own CLI; rc 0 iff fired or already integrated."""
+    if gates is None:
+        print(json.dumps(
+            {"event": "gate", "task": task, "fired": False,
+             "flipped": False, "already_integrated": False,
+             "refused": True,
+             "reason": "gate module absent (lone-law copy: l2/gates.py "
+                       "not staged beside the law)"}), flush=True)
+        return 2
+    ev = gates.gate(task)
+    return 0 if (ev["fired"] or ev["already_integrated"]) else 1
+
+
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "audit"
     if mode == "seed":
@@ -1912,11 +1986,24 @@ if __name__ == "__main__":
             ),
             indent=1,
         ))
+    elif mode == "review":
+        if len(sys.argv) < 5:
+            print("usage: l2/inrepo.py review <task> <reviewer> "
+                  "<agree|veto> [evidence-ref]", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(review_cmd(
+            sys.argv[2], sys.argv[3], sys.argv[4],
+            sys.argv[5] if len(sys.argv) > 5 else None))
+    elif mode == "gate":
+        if len(sys.argv) < 3:
+            print("usage: l2/inrepo.py gate <task>", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(gate_cmd(sys.argv[2]))
     else:
         print(
             f"unknown mode: {mode}\n"
-            "usage: l2/inrepo.py {seed|worker|audit|sweep|open_tasks"
-            "|reconcile|relabel|divergence|correction-graph} ...",
+            "usage: l2/inrepo.py {seed|worker|audit|review|gate|sweep"
+            "|open_tasks|reconcile|relabel|divergence|correction-graph} ...",
             file=sys.stderr,
         )
         sys.exit(2)
