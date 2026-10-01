@@ -44,6 +44,29 @@ import sys
 import time
 from urllib.parse import urlparse
 
+try:
+    import metrics
+except ImportError:  # loaded by path (tests, drivers): resolve the sibling
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import metrics
+    except ImportError:
+        # the law file travels without its sibling (staged nodes, lone
+        # inrepo.py copies — the lawgate pattern): the lane runs with NO
+        # metrics. Observe-only means the instrumentation can never
+        # become a dependency of the wire.
+        class _MetricsNoop:
+            def enabled(self):
+                return False
+
+            def emit(self, *a, **k):
+                return None
+
+            def observe_attempt(self, out):
+                return None
+
+        metrics = _MetricsNoop()
+
 ORIGIN = os.environ.get("SWARM_ORIGIN", "ssh://example-host-a/home/you/swarmo-origin.git")
 
 
@@ -204,12 +227,28 @@ def claim_detail(worker: str, task: str) -> dict:
     if not task_name_is_safe(task):
         # wave-8 defense in depth: classify_claim_failure maps rc 128 to
         # 'structural', so the worker stops honestly instead of spinning.
+        if metrics.enabled():
+            metrics.emit("claim", task=task, worker=worker, att=None, rc=128,
+                         outcome=classify_claim_failure(128, _BAD_TASK_MSG))
         return {"att": None, "rc": 128, "stderr": _BAD_TASK_MSG}
     c_sha, c_proc = commit_tree(empty_tree(), "-m", f"claim {task} {att}")
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
     r = push_sha_ref(c_sha, f"refs/swarm/claims/{task}", failed=c_proc)
-    return {"att": att if ok(r) else None, "rc": r.returncode,
-            "stderr": r.stderr or ""}
+    res = {"att": att if ok(r) else None, "rc": r.returncode,
+           "stderr": r.stderr or ""}
+    # INT-085a metrics (observe-only): the attempt AND its CAS verdict
+    # (won / race = duplicate-rejection / structural) are data; recorded
+    # only after the lane's own result exists, which it never changes.
+    if metrics.enabled():
+        outcome = (
+            "won" if res["att"]
+            else classify_claim_failure(res["rc"], res["stderr"])
+        )
+        metrics.emit(
+            "claim", task=task, worker=worker, att=res["att"], rc=res["rc"],
+            outcome=outcome,
+        )
+    return res
 
 
 def claim(worker: str, task: str) -> str | None:
@@ -329,7 +368,13 @@ def work_task(worker: str, task: str, att: str) -> dict:
     oracle failed) were always final."""
     tree = tempfile_tree(task)
     try:
-        return _work_task(worker, task, att, tree)
+        out = _work_task(worker, task, att, tree)
+        # INT-085a metrics (observe-only): the attempt's judged outcome
+        # (verdict) and any requeue decision (heir) as the event carries
+        # them — recorded after the fact, never instead of the return.
+        if metrics.enabled():
+            metrics.observe_attempt(out)
+        return out
     finally:
         shutil.rmtree(tree, ignore_errors=True)
 
@@ -1010,6 +1055,10 @@ def worker(name: str, only: list | None = None) -> bool:
                 out["claim_freed"] = True
             except Exception:  # noqa: BLE001
                 out["claim_freed"] = False
+            if metrics.enabled():
+                metrics.emit("crash", task=task, worker=name, att=att,
+                             err=repr(e)[:200],
+                             claim_freed=out.get("claim_freed"))
         done += 1
         print(json.dumps(out), flush=True)
     print(
@@ -1115,6 +1164,11 @@ def sweep(origin: str, task: str, att: str | None = None) -> dict:
             raise RuntimeError(f"sweep push failed: {r.stderr.strip()[:300]}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    # INT-085a metrics (observe-only): an eviction is what just happened
+    # (archived dead attempts + freed live refs), recorded post-transaction.
+    if metrics.enabled():
+        metrics.emit("eviction", task=task, att=att,
+                     archived=len(live), deleted=len(live))
     return {
         "task": task,
         "att": att,
@@ -1202,8 +1256,14 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
         try:
             res = sweep(origin, t)
             out["swept"].append(res["att"])
+            if metrics.enabled():
+                metrics.emit("lease_expired", task=t, age_s=round(age, 1),
+                             swept=res["att"])
         except RuntimeError as e:
             out["errors"].append({"task": t, "err": str(e)[:200]})
+            if metrics.enabled():
+                metrics.emit("lease_expired", task=t, age_s=round(age, 1),
+                             swept=None, error=str(e)[:200])
     # orphan return/verdict refs (no live claim) — flag, never touch
     for ref in have:
         for kind in ("tasks", "verdicts"):
