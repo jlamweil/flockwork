@@ -350,13 +350,53 @@ def _guarded_sweep(task: str) -> tuple[dict | None, str | None]:
         return None, str(e)[:200]
 
 
+def keep_tree_enabled() -> bool:
+    """FLOCKWORK_KEEP_TREE=1 (WQ-031): preserve a merit-failed attempt's
+    tree so a failure is auditable — the metrics layer's contract shape
+    (env-switched, observe-only; off = byte-identical wire behavior)."""
+    return os.environ.get("FLOCKWORK_KEEP_TREE") == "1"
+
+
+def keep_tree_root() -> str:
+    return (
+        os.environ.get("FLOCKWORK_KEEP_DIR")
+        or os.path.join(os.getcwd(), "kept-attempts")
+    )
+
+
+def keep_attempt_tree(task: str, att: str, tree: str):
+    """MOVE a merit-failed attempt tree to the keep dir (never delete —
+    the rmtree in work_task's finally becomes a no-op on this path).
+    Returns (kept_path, None) on success, (None, error) otherwise; a
+    failed keep must never break the attempt (observe-only law). The
+    leaf is sanitized to tempfile_tree's alphabet: task names are
+    remote data (a '/' is a legal refname component) and the '@' join
+    is the archive-marker convention, never user input."""
+    safe = lambda s: re.sub(r"[^A-Za-z0-9._-]", "_", s)
+    dst = os.path.join(keep_tree_root(), f"{safe(task)}@{safe(att)}")
+    try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        final, n = dst, 0
+        while os.path.exists(final):  # a colliding keep never overwrites
+            n += 1
+            final = f"{dst}.{n}"
+        shutil.move(tree, final)
+        return final, None
+    except OSError as e:
+        return None, str(e)[:200]
+
+
 def work_task(worker: str, task: str, att: str) -> dict:
     """Fix + verify + return + verdict. Only called by the claim winner.
 
     Owns the attempt's scratch tree: created here, removed when the
     attempt ends (any path) — the tree is never read after a return,
     and an abandoned clone per attempt littered the host (568 dirs
-    measured 2026-09-21). The c6 requeue rule lives in _work_task.
+    measured 2026-09-21). The one exception is FLOCKWORK_KEEP_TREE's
+    merit-fail keep (WQ-031): the tree is MOVED to the keep dir inside
+    _work_task before the verdict is written, so the finally-rmtree
+    below finds nothing and removes nothing. The c6 requeue rule lives
+    in _work_task.
 
     Carries the frozen c6 requeue rule (experiments/c6/FREEZE.md):
     an environmental death (dispatch failed leaving no work in the
@@ -740,14 +780,22 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         # commit found live in wave 2 on the env-death path). Merit
         # failure is FINAL: main and refs/swarm/tasks stay untouched,
         # ONLY the honest verdict is written, with the real pytest_rc.
+        # WQ-031 (INT-085): with FLOCKWORK_KEEP_TREE=1 the tree is moved
+        # to the keep dir BEFORE the verdict so both the event and the
+        # verdict body can carry the kept path — the dispatch RAN here
+        # (env-death legs all returned above), which is exactly the
+        # artifact worth auditing. A failed keep changes nothing: the
+        # finally-rmtree still cleans up, the verdict stays honest.
+        kept, kept_err = (None, None)
+        if keep_tree_enabled():
+            kept, kept_err = keep_attempt_tree(task, att, tree)
+        v_body = verdict_body(task, att, False, worker, oc_rc, pr.returncode)
+        if kept:
+            v_body += f"\nkept: {kept}"
         et = empty_tree()
-        v_sha, v_proc = commit_tree(
-            et,
-            "-m",
-            verdict_body(task, att, False, worker, oc_rc, pr.returncode),
-        )
+        v_sha, v_proc = commit_tree(et, "-m", v_body)
         r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc)
-        return {
+        out = {
             "event": "attempted",
             "worker": worker,
             "task": task,
@@ -765,6 +813,11 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "swept": None,
             "reason": "merit_failure_no_publish",
         }
+        if kept:
+            out["kept"] = kept
+        if kept_err:
+            out["kept_error"] = kept_err
+        return out
     # return commit on main lineage with the att trailer; concurrent
     # workers push main too — on non-FF, rebase onto origin and retry
     # (reached only when the oracle PASSED — the publish is earned)

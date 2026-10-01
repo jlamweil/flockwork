@@ -37,7 +37,10 @@ line one.
    (`host:` carries the worker name).
 8. An honest **merit failure** — dispatched work that fails its oracle —
    touches nothing but the verdict (`fixed: false`); it never lands on
-   main.
+   main. With the optional debug switch `FLOCKWORK_KEEP_TREE=1` the
+   failed attempt's tree is also MOVED to `kept-attempts/<task>@<att>`
+   (or `FLOCKWORK_KEEP_DIR`) and the verdict carries its `kept:` path —
+   a failure you can audit instead of a failure you must imagine.
 9. An **environmental death** — dispatch timeout (`oc_rc: 124`) or a
    failed dispatch that left an empty tree — is never recorded as a
    fix: the attempt is archived under
