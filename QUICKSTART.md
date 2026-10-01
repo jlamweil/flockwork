@@ -1,6 +1,10 @@
-# QUICKSTART — run a swarm coordination race yourself, on a scratch board
+# QUICKSTART — run a flockwork race yourself, on a scratch board
 
-swarmo coordinates workers entirely through git refs (`refs/swarm/*`)
+> product name: flockwork — "the swarm that runs like clockwork" (CLI
+> examples below keep the working name `swarmo`: `python3 l2/inrepo.py …`;
+> naming decision record: `docs/NAME.md`).
+
+flockwork coordinates workers entirely through git refs (`refs/swarm/*`)
 on a shared origin. This kit gives you a **scratch origin** — a local
 bare repo under `/tmp` — so you can drive the whole loop yourself
 without touching the real example-host-a substrate. Work from the repo root.

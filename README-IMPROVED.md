@@ -1,13 +1,16 @@
-# swarmo — git-native multi-agent coordination
+# flockwork — the swarm that runs like clockwork
 
-swarmo is a worker swarm whose **entire coordination substrate is git
-itself**: no server, no database, no queue daemon — a shared origin's
+**flockwork** is a worker swarm whose **entire coordination substrate
+is git itself**: no server, no database, no queue daemon — a shared
+origin's
 refs under `refs/swarm/` carry task briefs, claims, returns, and
 verdicts, and every guarantee (exactly-once work, honest outcomes,
 bounded retries) reduces to a git property you can verify with
 `ls-remote` and `cat-file`. This repo doubles as its own substrate
 (D-INREPO, LOOP-2026-09-18.md): the machinery lives in `l2/inrepo.py`,
-and workers coordinate through refs on the project's own origin.
+and workers coordinate through refs on the project's own origin. (The
+code, CLI, and repo history carry the working name `swarmo` — same
+product. Naming decision record: `docs/NAME.md`.)
 
 Run it yourself in five minutes: `QUICKSTART.md` (scratch board, zero
 model spend). Design record and what comes next: `DESIGN-NEXT.md`.
