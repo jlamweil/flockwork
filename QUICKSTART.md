@@ -4,8 +4,13 @@
 > examples below keep the working name `swarmo`: `python3 l2/inrepo.py …`;
 > naming decision record: `docs/NAME.md`).
 
-flockwork coordinates workers entirely through git refs (`refs/swarm/*`)
-on a shared origin. This kit gives you a **scratch origin** — a local
+First time here? A **ref** is just a named git pointer (`git ls-remote`
+lists them) — flockwork coordinates workers entirely through refs under
+`refs/swarm/*` on a shared origin, nothing else. Zero-context
+orientation (narrative, glossary, which-doc-when):
+`docs/00-ORIENTATION.md`.
+
+This kit gives you a **scratch origin** — a local
 bare repo under `/tmp` — so you can drive the whole loop yourself
 without touching the real example-host-a substrate. Work from the repo root.
 
@@ -20,6 +25,8 @@ Stepping through it by hand instead — every line is copy-pasteable:
 
 ```bash
 # 1. a fresh scratch origin: local bare repo, main = your current HEAD
+#    SWARM_ORIGIN is the board's address: EVERY l2/inrepo.py command (and
+#    every worker you launch from this shell) reads it to find the origin.
 rm -rf /tmp/swarmo-owner-demo && mkdir -p /tmp/swarmo-owner-demo
 git init -q --bare /tmp/swarmo-owner-demo/origin.git
 git -C /tmp/swarmo-owner-demo/origin.git symbolic-ref HEAD refs/heads/main
@@ -33,13 +40,29 @@ python3 l2/inrepo.py seed demo/demo-spec.json
 python3 l2/inrepo.py open_tasks
 
 # 4. launch two workers (two terminals; or run the first with ` &`)
+#    each `worker w1` run = the whole loop: scan the queue -> claim a task
+#    (create-once CAS push: exactly one worker wins the race) -> dispatch
+#    the brief to $OPENCODE_BIN (here the free deterministic shim) -> run
+#    the brief's verify: oracle on the result -> land the fix on main ->
+#    write the verdict ref. Loser exits honestly with `worker_done,
+#    completed 0`.
 OPENCODE_BIN=$PWD/demo/trivial_fixer.sh python3 l2/inrepo.py worker w1
 OPENCODE_BIN=$PWD/demo/trivial_fixer.sh python3 l2/inrepo.py worker w2
 
-# 5. watch the refs appear on the board
+# 5. watch the refs appear on the board (refs = named pointers; these
+#    few lines ARE the whole coordination state: spec, claim, return,
+#    verdict)
 git ls-remote "$SWARM_ORIGIN" 'refs/swarm/*'
 
 # 6. read the verdict (scratch board is local, so plain git works)
+#    expected shape:
+#      verdict
+#      task: hello-demo
+#      attempt: att-w1-<hex>   claim label att-<worker>-<hex>
+#      fixed: true             the verify: oracle passed, fix is on main
+#      host: w1                field named host, value = the worker name
+#      oc_rc: 0                dispatch exit code (124 would mean timeout)
+#      pytest_rc: 0            oracle exit code
 git -C /tmp/swarmo-owner-demo/origin.git log -1 --format=%B refs/swarm/verdicts/hello-demo
 
 # 7. audit the board — h1_pass true means every claim returned with a verdict
@@ -72,3 +95,5 @@ repeat steps 2–8. The scripted version accepts
 `SWARM_ORIGIN` at an origin you don't own while experimenting.
 
 Deeper design: `DESIGN-NEXT.md`. What each ref means: `README-IMPROVED.md`.
+Never seen any of this and want the full narrative + glossary first:
+`docs/00-ORIENTATION.md`.

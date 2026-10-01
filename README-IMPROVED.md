@@ -12,6 +12,11 @@ and workers coordinate through refs on the project's own origin. (The
 code, CLI, and repo history carry the working name `swarmo` — same
 product. Naming decision record: `docs/NAME.md`.)
 
+> **New to swarms, git refs, or both?** `docs/00-ORIENTATION.md` is the
+> zero-context orientation: the project in 15 sentences, how the pieces
+> relate, which doc to open for which job, what a verdict means, and a
+> full glossary.
+
 Run it yourself in five minutes: `QUICKSTART.md` (scratch board, zero
 model spend). Design record and what comes next: `DESIGN-NEXT.md`.
 Frozen hypotheses: `DESIGNS.md`; verdict history: `VERDICTS.md`;
