@@ -1,0 +1,3 @@
+{
+  "hello-demo": "Owner demo task (swarmo test kit).\n\nAdd a file hello.txt at the repository root whose only line is: hi\n\nverify: grep -qx hi hello.txt"
+}
