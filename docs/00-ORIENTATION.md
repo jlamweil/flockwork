@@ -89,6 +89,7 @@ line one.
 | `DESIGN-NEXT.md` | design record and what comes next | you want the roadmap |
 | `DESIGNS.md` / `VERDICTS.md` / `LOOP-*.md` / `experiments/` | frozen hypotheses, verdict history, nightly records | you want archaeology |
 | `docs/NAME.md` | flockwork-vs-swarmo naming decision record | the two names confuse you |
+| `docs/SCRATCH-BOARDS.md` | the board-authoring law (origin HEAD must resolve) + smoke test | you build a board workers will clone |
 
 ## Which job are you here for?
 
@@ -106,6 +107,9 @@ line one.
 - **"Is my board healthy?"** → `python3 l2/inrepo.py audit` —
   `h1_pass: true` is green.
 - **"Why two names?"** → `docs/NAME.md`.
+- **"Build a board for real workers."** → `docs/SCRATCH-BOARDS.md` — the HEAD
+  law + smoke test; a board whose clones check out nothing is broken, and the
+  lane cannot tell you (clone rc is 0 either way).
 
 ## Reading a verdict
 
@@ -140,7 +144,8 @@ parent; claim/verdict/spec commits are root commits so their objects
 never leak into consumer clones. *`--force-with-lease=<ref>:`* — git's
 compare-and-swap: the push only lands if `<ref>` did not exist; this
 is the whole exactly-once mechanism. *scratch board* — a throwaway
-bare origin under `/tmp` (or `--origin <URL>` for a real one).
+bare origin under `/tmp` (or `--origin <URL>` for a real one). Authored per
+`docs/SCRATCH-BOARDS.md` (HEAD must resolve before workers clone).
 
 **The lane (refs under `refs/swarm/`):** *`specs/<task>`* — the brief,
 seeded by the operator. *`claims/<task>`* — the lease; exactly one
