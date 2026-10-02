@@ -212,8 +212,8 @@ def test_summary_counts_reject_rate_and_latency():
     m = _metrics()
     s = m.summarize(_synthetic_events())
     assert s["events"] == 10 and s["malformed"] == 0
-    assert s["counts"] == {"claim": 4, "verdict": 2, "heir": 1, "crash": 1,
-                           "eviction": 1, "lease_expired": 1}
+    assert s["counts"] == {"seed": 0, "claim": 4, "verdict": 2, "heir": 1,
+                           "crash": 1, "eviction": 1, "lease_expired": 1}
     assert s["claims"]["attempts"] == 4
     assert s["claims"]["won"] == 2
     assert s["claims"]["race_rejected"] == 1
@@ -302,6 +302,184 @@ def test_lease_expiry_and_eviction_recorded(monkeypatch, tmp_path):
     assert "refs/swarm/claims/T-lease" not in refs
     assert any(r.startswith("refs/swarm/archive/claims/T-lease@")
                for r in refs)
+
+
+# ------------------------------------------------- the DORA five (WQ-043)
+#
+# The mapping of record is the program's ops/DORA-METRICS-MAP.md layer 1:
+# deployment frequency = landed verdicts per day; lead time = seed ->
+# verdict (NOT just claim -> verdict); CFR = merit-fail verdict ratio;
+# recovery = crash/lease-expiry -> heir re-claim -> verdict span; rework
+# = requeues + duplicate-claim races + verdicts re-done. --dora is the
+# same observer: it adds a section to the summary, it changes nothing.
+
+def _dora_events():
+    """Two UTC days; every DORA shape at least once. Day boundary at
+    epoch 86400 (1970-01-02 UTC) keeps the bucketing test date-obvious."""
+    return [
+        # T1: seeded, won, landed green on day 1 — a deployment
+        {"ts": 10.0, "event": "seed", "task": "T1", "ok": True},
+        {"ts": 20.0, "event": "claim", "task": "T1", "worker": "w1",
+         "att": "att-w1-a1", "outcome": "won", "rc": 0},
+        {"ts": 100.0, "event": "verdict", "task": "T1", "worker": "w1",
+         "att": "att-w1-a1", "fixed": True, "verdict_pushed": True},
+        # T2: seeded, raced claim (rework), then won; merit-FAIL verdict
+        # day 1 (a change failure, not a deployment), heir requeued it
+        {"ts": 12.0, "event": "seed", "task": "T2", "ok": True},
+        {"ts": 21.0, "event": "claim", "task": "T2", "worker": "w2",
+         "att": None, "outcome": "race", "rc": 1},
+        {"ts": 22.0, "event": "claim", "task": "T2", "worker": "w1",
+         "att": "att-w1-b2", "outcome": "won", "rc": 0},
+        {"ts": 500.0, "event": "verdict", "task": "T2", "worker": "w1",
+         "att": "att-w1-b2", "fixed": False, "verdict_pushed": True},
+        {"ts": 501.0, "event": "heir", "task": "T2", "worker": "w1",
+         "att": "att-w1-b2", "requeued": True},
+        # T3: never seeded, crash -> re-claim -> green verdict day 2
+        # (the recovery span), and a SECOND verdict on the task (re-done)
+        {"ts": 90000.0, "event": "crash", "task": "T3", "worker": "w3",
+         "att": "att-w3-c3", "claim_freed": True},
+        {"ts": 90010.0, "event": "claim", "task": "T3", "worker": "w4",
+         "att": "att-w4-d4", "outcome": "won", "rc": 0},
+        {"ts": 90100.0, "event": "verdict", "task": "T3", "worker": "w4",
+         "att": "att-w4-d4", "fixed": True, "verdict_pushed": True},
+        {"ts": 95000.0, "event": "verdict", "task": "T3", "worker": "w4",
+         "att": "att-w4-d4", "fixed": True, "verdict_pushed": True},
+        # T4: lease-expiry failure origin, never recovered (no later
+        # claim) — a span that must NOT be counted
+        {"ts": 91000.0, "event": "lease_expired", "task": "T4",
+         "age_s": 1801.0, "swept": "att-x"},
+        # T5: fixed but never pushed — landed NOWHERE (not a deployment)
+        {"ts": 92000.0, "event": "verdict", "task": "T5", "worker": "w5",
+         "att": "att-w5-e5", "fixed": True, "verdict_pushed": False},
+    ]
+
+
+def test_dora_deployment_frequency_buckets_landed_verdicts_per_day():
+    m = _metrics()
+    d = m.dora(_dora_events())
+    df = d["deployment_frequency"]
+    assert df["landed_total"] == 3  # T1 + both T3 verdicts; T5 unpushed NO
+    assert df["per_day"] == {"1970-01-01": 1, "1970-01-02": 2}
+    assert df["days_active"] == 2
+    assert df["mean_per_active_day"] == pytest.approx(1.5)
+
+
+def test_dora_lead_time_joins_seed_to_verdict_per_task():
+    m = _metrics()
+    d = m.dora(_dora_events())
+    lt = d["lead_time_s"]
+    # joined: T1 (100-10=90) and T2 (500-12=488); T3/T5 never seeded —
+    # 'no seed recorded' must not silently become a measured lead time
+    assert lt["n"] == 2
+    assert lt["p50"] == pytest.approx(289.0)
+    assert lt["max"] == pytest.approx(488.0)
+
+
+def test_dora_change_failure_rate_is_merit_fail_ratio():
+    m = _metrics()
+    d = m.dora(_dora_events())
+    cfr = d["change_failure_rate"]
+    assert cfr["merit_fails"] == 1 and cfr["total"] == 5
+    assert cfr["rate"] == pytest.approx(0.2)
+
+
+def test_dora_recovery_spans_crash_to_verdict():
+    m = _metrics()
+    d = m.dora(_dora_events())
+    rec = d["recovery_s"]
+    # T3 only: crash 90000 -> verdict 90100 = 100s; the lease-expiry on
+    # T4 never re-claimed, so it is an unrecovered failure, not a span
+    assert rec["failures"] == 2
+    assert rec["n"] == 1
+    assert rec["p50"] == pytest.approx(100.0)
+    assert rec["max"] == pytest.approx(100.0)
+
+
+def test_dora_rework_counts_races_requeues_and_redone_verdicts():
+    m = _metrics()
+    d = m.dora(_dora_events())
+    rw = d["rework_rate"]
+    assert rw["race_rejections"] == 1
+    assert rw["requeues"] == 1
+    assert rw["redone_verdicts"] == 1  # T3's second verdict
+    assert rw["events"] == 3
+    # denominator: claim attempts (4 = 3 won + 1 race)
+    assert rw["attempts"] == 4
+    assert rw["rate"] == pytest.approx(0.75)
+
+
+def test_dora_empty_board_is_honest_zeros_and_nones():
+    m = _metrics()
+    d = m.dora([])
+    assert d["deployment_frequency"]["landed_total"] == 0
+    assert d["deployment_frequency"]["per_day"] == {}
+    assert d["deployment_frequency"]["mean_per_active_day"] is None
+    assert d["lead_time_s"] == {"n": 0, "p50": None, "p90": None, "max": None}
+    assert d["change_failure_rate"]["rate"] is None
+    assert d["recovery_s"]["n"] == 0 and d["recovery_s"]["p50"] is None
+    assert d["recovery_s"]["failures"] == 0
+    assert d["rework_rate"]["rate"] is None and d["rework_rate"]["events"] == 0
+
+
+def test_dora_cli_flag_adds_section_default_omits_it(tmp_path):
+    f = tmp_path / "m.jsonl"
+    f.write_text(json.dumps(_synthetic_events()[0]) + "\n")
+    base = subprocess.run(
+        [sys.executable, "-m", "l2.metrics", str(f)],
+        cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert base.returncode == 0 and "dora" not in json.loads(base.stdout)
+    dor = subprocess.run(
+        [sys.executable, "-m", "l2.metrics", "--dora", str(f)],
+        cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert dor.returncode == 0, dor.stderr
+    s = json.loads(dor.stdout)
+    assert "dora" in s
+    # the base sections are byte-stable under the flag: one observer,
+    # not a second summary
+    for k in json.loads(base.stdout):
+        assert s[k] == json.loads(base.stdout)[k]
+
+
+def test_seed_event_recorded_and_wire_identical(monkeypatch, tmp_path):
+    """seed() joins the layer: per-task seed events (ok carries the push
+    result) under the switch, nothing without it, same refs either way —
+    the DORA lead-time join needs the seed anchor (map: 'extend the join
+    to the seed event')."""
+    o = tmp_path / "origin.git"
+    _git("init", "-q", "--bare", str(o))
+    w = _scratch_worker_repo(tmp_path)
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({"T-seed": "b\n\nverify: true",
+                                "T-bad@name": "b"}))
+    seen = {}
+    for tag, on in (("off", "0"), ("on", "1")):
+        o2 = tmp_path / f"origin-{tag}.git"
+        _git("init", "-q", "--bare", str(o2))
+        monkeypatch.setenv("SWARM_ORIGIN", str(o2))
+        monkeypatch.setenv("FLOCKWORK_METRICS", on)
+        monkeypatch.setenv("FLOCKWORK_METRICS_FILE", str(tmp_path / f"m-{tag}.jsonl"))
+        monkeypatch.chdir(w)
+        inrepo = _load_inrepo()
+        seen[tag] = inrepo.seed(str(spec))
+    assert seen["off"] == seen["on"]  # same results shape
+    assert seen["on"]["T-seed"] is True and "refused" in seen["on"]["T-bad@name"]
+    refs_off = _git("ls-remote", str(tmp_path / "origin-off.git"), "refs/swarm/*").stdout.split()
+    refs_on = _git("ls-remote", str(tmp_path / "origin-on.git"), "refs/swarm/*").stdout.split()
+    assert sorted(r for r in refs_off) == sorted(refs_on)
+    evs = _read_jsonl(tmp_path / "m-on.jsonl")
+    seeds = [e for e in evs if e["event"] == "seed"]
+    assert len(seeds) == 2  # one per task, refused ones included
+    by_task = {e["task"]: e for e in seeds}
+    assert by_task["T-seed"]["ok"] is True
+    assert by_task["T-bad@name"]["ok"] is False
+    assert all(isinstance(e["ts"], float) for e in seeds)
+    assert not (tmp_path / "m-off.jsonl").exists()  # off means off
+
+
+def test_dora_seed_events_counted_in_summary_counts():
+    m = _metrics()
+    s = m.summarize([{"ts": 1.0, "event": "seed", "task": "T", "ok": True}])
+    assert s["counts"]["seed"] == 1
 
 
 # ------------------------------------------- e2e: the pilot-shaped runs

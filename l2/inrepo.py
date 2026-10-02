@@ -231,6 +231,11 @@ def seed(spec_path: str) -> dict:
         r = push_sha_ref(c_sha, f"refs/swarm/specs/{task}",
                          lease=False, failed=c_proc)
         R[task] = ok(r)
+    if metrics.enabled():
+        # the DORA lead-time anchor (map: 'extend the join to the seed
+        # event'); refused specs are data too — ok carries the push result
+        for task, r in R.items():
+            metrics.emit("seed", task=task, ok=(r is True))
     print(json.dumps({"event": "seeded", "tasks": R}, indent=1))
     return R
 

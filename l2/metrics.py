@@ -13,6 +13,8 @@ byte-identical — zero cost, zero wire change.
 Event vocabulary (one JSON object per JSONL line; `ts` is an epoch
 float on every line):
 
+  seed          one per task a seed pushed: task/ok (the push result —
+                refused specs are data too); the DORA lead-time anchor
   claim         task/worker/att/rc/outcome — outcome is won, race
                 (the CAS duplicate-rejection: exactly-once held) or
                 structural (broken environment; a re-scan cannot heal it)
@@ -33,11 +35,15 @@ instrument must never break the lane.
 
 Summary — the pilots' judge:
   python3 -m l2.metrics [files...]     # default: the sink file
+  python3 -m l2.metrics --dora [files...]
 prints counts, the claim reject rate, claim->verdict latency
 percentiles (joined on att across the scanned files), and verdict
-outcomes. A MISSING file exits 2 with nothing on stdout — 'no data
-recorded' and 'cannot read the data' must not look alike. An empty
-file is a zero board: exit 0.
+outcomes; --dora adds the five DORA keys (ops/DORA-METRICS-MAP.md
+layer 1) as a "dora" section — deployments per day (landed verdicts),
+seed->verdict lead time, merit-fail ratio, crash->recovery spans,
+rework (races + requeues + re-done verdicts). A MISSING file exits 2
+with nothing on stdout — 'no data recorded' and 'cannot read the data'
+must not look alike. An empty file is a zero board: exit 0.
 """
 
 from __future__ import annotations
@@ -47,7 +53,8 @@ import os
 import sys
 import time
 
-KINDS = ("claim", "verdict", "heir", "crash", "eviction", "lease_expired")
+KINDS = ("seed", "claim", "verdict", "heir", "crash", "eviction",
+         "lease_expired")
 
 
 def enabled() -> bool:
@@ -215,8 +222,137 @@ def summarize(events: list[dict], malformed: int = 0) -> dict:
     }
 
 
+def dora(events: list[dict]) -> dict:
+    """The five DORA keys over the stream (ops/DORA-METRICS-MAP.md,
+    layer 1). Pure over the event list, same observer discipline as
+    summarize():
+
+    deployment frequency  verdicts LANDED per UTC day — fixed AND
+                        verdict_pushed (an unpushed green landed nothing)
+    lead time           seed->verdict joined on task (the claim join is
+                        NOT enough: delivery starts at the seed, not the
+                        CAS win); verdicts on never-seeded tasks are not
+                        silently counted as measured
+    change failure rate merit-fail verdicts (fixed false) / verdicts
+    recovery time       crash/lease-expiry -> heir re-claim -> verdict
+                        span per task; an unrecovered failure is a
+                        counted failure and no span
+    rework rate         requeues + duplicate-claim races + verdicts
+                        re-done (2nd+ verdict on a task), over claim
+                        attempts
+
+    No measurement is a measured zero: rates/percentiles are None when
+    their denominator is empty.
+    """
+    per_day: dict[str, int] = {}
+    landed = 0
+    seed_ts: dict[str, float] = {}      # task -> earliest ok-seed ts
+    attempts = races = requeues = merit_fail = total_verdicts = 0
+    won_claims: list[tuple] = []        # (task, ts, att) in stream order
+    failures: list[tuple] = []          # (task, ts) crash/lease-expiry
+    verdicts: dict[str, list[float]] = {}  # task -> [ts, ...]
+    verdict_by_att: dict[str, float] = {}  # att -> ts
+    for ev in events:
+        kind = ev.get("event")
+        ts = ev.get("ts")
+        t = ev.get("ts") if isinstance(ts, (int, float)) else None
+        if kind == "seed":
+            task = ev.get("task")
+            if (ev.get("ok") is True and task
+                    and t is not None
+                    and (task not in seed_ts or t < seed_ts[task])):
+                seed_ts[task] = t
+        elif kind == "claim":
+            attempts += 1
+            if ev.get("outcome") == "race":
+                races += 1
+            elif ev.get("outcome") == "won":
+                won_claims.append((ev.get("task"), t, ev.get("att")))
+        elif kind == "verdict":
+            total_verdicts += 1
+            if ev.get("fixed") is False:
+                merit_fail += 1
+            if ev.get("fixed") is True and ev.get("verdict_pushed") is True:
+                landed += 1
+                day = time.strftime("%Y-%m-%d", time.gmtime(t))
+                per_day[day] = per_day.get(day, 0) + 1
+            task = ev.get("task")
+            if task and t is not None:
+                verdicts.setdefault(task, []).append(t)
+            att = ev.get("att")
+            if att and t is not None and (att not in verdict_by_att
+                                          or t < verdict_by_att[att]):
+                # earliest verdict per att: recovery closes at the FIRST
+                # green, a later re-done does not extend the outage
+                verdict_by_att[att] = t
+        elif kind == "heir":
+            if ev.get("requeued") is True:
+                requeues += 1
+        elif kind in ("crash", "lease_expired"):
+            task = ev.get("task")
+            if task and t is not None:
+                failures.append((task, t))
+    leads = sorted(
+        vt - seed_ts[task]
+        for task, vts_list in verdicts.items() if task in seed_ts
+        for vt in vts_list if vt >= seed_ts[task])
+    recovered: list[float] = []
+    for task, f_ts in failures:
+        re_claim = next(((c_ts, att) for c_task, c_ts, att in won_claims
+                         if c_task == task and c_ts is not None
+                         and att and c_ts >= f_ts), None)
+        if re_claim is None:
+            continue
+        v_ts = verdict_by_att.get(re_claim[1])
+        if v_ts is not None and v_ts >= re_claim[0]:
+            recovered.append(v_ts - f_ts)
+    redone = sum(max(0, len(v) - 1) for v in verdicts.values())
+    rework_events = requeues + races + redone
+    days_active = len(per_day)
+    return {
+        "deployment_frequency": {
+            "landed_total": landed,
+            "per_day": dict(sorted(per_day.items())),
+            "days_active": days_active,
+            "mean_per_active_day": round(landed / days_active, 2)
+            if days_active else None,
+        },
+        "lead_time_s": {
+            "n": len(leads),
+            "p50": round(_pctl(leads, 0.50), 3) if leads else None,
+            "p90": round(_pctl(leads, 0.90), 3) if leads else None,
+            "max": round(leads[-1], 3) if leads else None,
+        },
+        "change_failure_rate": {
+            "merit_fails": merit_fail,
+            "total": total_verdicts,
+            "rate": round(merit_fail / total_verdicts, 4)
+            if total_verdicts else None,
+        },
+        "recovery_s": {
+            "failures": len(failures),
+            "n": len(recovered),
+            "p50": round(_pctl(sorted(recovered), 0.50), 3)
+            if recovered else None,
+            "p90": round(_pctl(sorted(recovered), 0.90), 3)
+            if recovered else None,
+            "max": round(max(recovered), 3) if recovered else None,
+        },
+        "rework_rate": {
+            "requeues": requeues,
+            "race_rejections": races,
+            "redone_verdicts": redone,
+            "events": rework_events,
+            "attempts": attempts,
+            "rate": round(rework_events / attempts, 4) if attempts else None,
+        },
+    }
+
+
 def main(argv: list[str]) -> int:
-    paths = argv or [metrics_file()]
+    dora_flag = "--dora" in argv
+    paths = [a for a in argv if a != "--dora"]
+    paths = paths or [metrics_file()]
     events: list[dict] = []
     malformed = 0
     for p in paths:
@@ -227,6 +363,8 @@ def main(argv: list[str]) -> int:
         events.extend(got)
         malformed += bad
     s = summarize(events, malformed)
+    if dora_flag:
+        s["dora"] = dora(events)
     s["files"] = paths
     print(json.dumps(s, indent=1))
     return 0
