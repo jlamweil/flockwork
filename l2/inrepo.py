@@ -89,6 +89,21 @@ except ImportError:  # loaded by path (tests, drivers): resolve the sibling
         # operation that did not happen never reports success).
         gates = None
 
+try:
+    import refschema
+except ImportError:  # loaded by path (tests, drivers): resolve the sibling
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import refschema
+    except ImportError:
+        # staged alone (the lawgate pattern): the lane boots with NO
+        # schema enforcement — the pre-schema law exactly (wave-9's
+        # empty-spec check only). Adoption is additive: the schemas
+        # (l2/refschema.py, WQ-054) refuse malformed refs at claim/gate
+        # time, well-formed refs behave byte-identically, and the schema
+        # can never become a dependency of the wire.
+        refschema = None
+
 ORIGIN = os.environ.get("SWARM_ORIGIN", "ssh://example-host-a/home/you/swarmo-origin.git")
 
 
@@ -612,6 +627,11 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "requeued": None,
             "swept": None,
             "reason": f"{reason}_heir_exhausted",
+            # WQ-054: the typed refusal detail rides the FINAL event too
+            # (a schema refusal that exhausts the heir budget must still
+            # name the missing field where the story ends, not only in
+            # the requeued first attempt).
+            "err": err[:200],
         }
 
     git("-C", tree, "config", "user.email", f"{worker}@swarm")
@@ -645,6 +665,19 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "spec ref fetched but its brief body is empty — "
             "nothing to dispatch on",
         )
+    # WQ-054 (INT-081 TAKE 1, the schema IS the instruction): a spec the
+    # schema refuses is an environmental death BEFORE dispatch, the
+    # wave-9 empty-spec class finer grained — zero work spent on a seed
+    # no worker can act on, the refusal typed with the missing field's
+    # name, the wave-10 heir gate keeping it from churning forever. A
+    # lone-law copy without the schema sibling skips this entirely.
+    if refschema is not None:
+        schema_errs = refschema.validate_spec(brief)
+        if schema_errs:
+            return _env_death_before_dispatch(
+                "spec-schema-refused",
+                "; ".join(schema_errs),
+            )
     verify = next(
         (
             ln[len("verify:") :].strip()
@@ -1785,12 +1818,51 @@ def audit(only: list | None = None) -> None:
         and "@" not in r
         and r[len("refs/swarm/claims/") :] not in spec_tasks
     )
-    print(
-        json.dumps(
-            {"h1_pass": h1, "claim_orphans": claim_orphans, "tasks": A},
-            indent=1,
-        )
-    )
+    # WQ-054 (INT-081 TAKE 1, the schema IS the instruction): the
+    # schema-refusal census — how many of the board's acting refs (task
+    # specs, reviewer verdicts) fail l2/refschema.py, each refusal named.
+    # Observe-only: a count, never a new failure class (h1 and the
+    # orphan census are untouched by it; absence of the section means a
+    # lone-law copy staged without the schema sibling, not a clean
+    # board — a clean board with the law present reads measured zeros).
+    schema_census = None
+    if refschema is not None:
+        spec_refusals, rv_refusals = [], []
+        spec_total = rv_total = 0
+        for ref in have:
+            if ref.startswith("refs/swarm/specs/") and "@" not in ref:
+                spec_total += 1
+                try:
+                    body = _origin_body_strict(current_origin, ref)
+                except RuntimeError as e:
+                    raise RuntimeError(
+                        f"audit cannot see the board: {e}"
+                    ) from None
+                if refschema.validate_spec(body):
+                    spec_refusals.append(ref[len("refs/swarm/specs/") :])
+            elif ref.startswith("refs/swarm/verdicts/") and "@" in ref:
+                rv_total += 1
+                name = ref[len("refs/swarm/verdicts/") :]
+                t, rev = name.rsplit("@", 1)
+                try:
+                    body = _origin_body_strict(current_origin, ref)
+                except RuntimeError as e:
+                    raise RuntimeError(
+                        f"audit cannot see the board: {e}"
+                    ) from None
+                _, errs = refschema.validate_review_verdict(body, t, rev)
+                if errs:
+                    rv_refusals.append({"ref": name, "errors": errs})
+        schema_census = {
+            "specs": {"total": spec_total,
+                      "refused": sorted(spec_refusals)},
+            "reviewer_verdicts": {"total": rv_total,
+                                  "refused": rv_refusals},
+        }
+    payload = {"h1_pass": h1, "claim_orphans": claim_orphans, "tasks": A}
+    if schema_census is not None:
+        payload["schema"] = schema_census
+    print(json.dumps(payload, indent=1))
 
 
 # --------------------------------------------------- correction graph

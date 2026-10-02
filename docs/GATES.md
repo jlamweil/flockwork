@@ -60,6 +60,14 @@ evidence: refs/swarm/tasks/INT-081
 | `outcome:` | exactly `agree` or `veto` (lowercase) |
 | `evidence:` | a git ref the reviewer examined — for a fix review, the return ref `refs/swarm/tasks/<task>` |
 
+Since WQ-054 (INT-081 TAKE 1) these checks are DEFINED in
+`l2/refschema.py` — the schema's definition of record, which also
+carries the spec-side schema (what + `verify:` done-bar, refused at
+claim time). `l2/gates.py` delegates to it and keeps the inline copy
+above as its staged-alone fallback; a refused verdict names its
+missing field in the gate event (`invalid_reasons`) and audit() counts
+refused board refs.
+
 ## 3. The count rule
 
 `m` = expected independent reviewers; `n` = agreement threshold. Both

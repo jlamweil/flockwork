@@ -36,6 +36,17 @@ import os
 import subprocess
 import sys
 
+try:
+    import refschema
+except ImportError:  # loaded by path (tests, drivers): resolve the sibling
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import refschema
+    except ImportError:
+        # staged alone (the lawgate lone-law lesson): the gate keeps its
+        # own inline §2 checks below — same refusals, no module typing.
+        refschema = None
+
 LAW = "docs/GATES.md"
 
 
@@ -100,7 +111,14 @@ def _check_name(kind, name):
 
 
 def parse_review_verdict(body, task, reviewer):
-    """docs/GATES.md §2 schema check. Returns (fields, error)."""
+    """docs/GATES.md §2 schema check. Returns (fields, error). The
+    schema's definition of record is l2/refschema.py (the schema IS the
+    instruction, WQ-054); this delegation keeps one implementation, the
+    inline body below is the staged-alone fallback."""
+    if refschema is not None:
+        fields, errs = refschema.validate_review_verdict(body, task,
+                                                         reviewer)
+        return fields, ("; ".join(errs) if errs else None)
     lines = body.strip().splitlines()
     if not lines or lines[0].strip() != "review-verdict":
         return None, "not a review-verdict object"
@@ -251,6 +269,12 @@ def gate(task, orig=None, cwd=None):
           "invalid": len(invalid), "evidence_missing": len(missing),
           "fired": fired, "flipped": False,
           "already_integrated": False}
+    if invalid:
+        # the typed schema refusals, loud in the event (WQ-054): a body
+        # that is not a verdict is never counted, and the field it is
+        # missing is named. Absent entirely on a clean count — a
+        # well-formed board's event gains no keys.
+        ev["invalid_reasons"] = sorted({v[3] for v in invalid if v[3]})
     if fired:
         evidence = agree[0][2]
         res = flip(task, [v[0] for v in agree], evidence, n, m,
