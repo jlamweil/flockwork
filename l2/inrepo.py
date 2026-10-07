@@ -1872,19 +1872,24 @@ def mm_model_of(att: str) -> str | None:
     """Model identity from an att token alone, per the correction-graph
     spec's label grammar (INT-016): worker labels declare
     mm-<model>-<role>, so att-mm-<model>-<role>-<hex6> attributes the
-    attempt to <model>. Anything else — pre-protocol labels, missing
-    role, a model or role containing '-' (extra tokens), a malformed
+    attempt to <model>. Protocol point 2 keeps the model token '-'-free
+    (dots/underscores only) and the hex6 suffix is fixed-width, so the
+    split is unambiguous: the model is the FIRST token after 'mm-' and
+    the role — the seat host, e.g. 'example-host-a' (the spec's own
+    worked example; FREEZE-CG: role = seat host, e.g. 'example-host-d')
+    — occupies everything between them and may carry '-'. Anything else
+    — pre-protocol labels, missing role, empty model token, a malformed
     suffix — attributes as None: an honest unknown vertex, never a
     silently misfiled one. Grammar tokens are refname-safe
     [A-Za-z0-9._-] by construction (the remote-data lesson: labels
-    become ref names); '-' inside ids is forbidden because it makes
-    the token split ambiguous."""
+    become ref names)."""
     parts = att.split("-")
     if (
-        len(parts) == 5
+        len(parts) >= 5
         and parts[0] == "att"
         and parts[1] == "mm"
-        and re.fullmatch(r"[0-9a-f]{6}", parts[4])
+        and parts[2]
+        and re.fullmatch(r"[0-9a-f]{6}", parts[-1])
     ):
         return parts[2]
     return None

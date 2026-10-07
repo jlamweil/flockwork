@@ -206,9 +206,11 @@ def test_mm_grammar_attributes_from_att_alone():
     assert mm.mm_model_of("att-mm-mimo-w2-deadbe") == "mimo"
     assert mm.mm_model_of("att-w1-abc123") is None          # pre-protocol
     assert mm.mm_model_of("att-mm-mimo-abc123") is None     # no role
-    # ambiguity is UNKNOWN, never a silent misfile: a '-' inside an id
-    # makes the token split undecidable
-    assert mm.mm_model_of("att-mm-glm-53f-x-abc123") is None
+    # the model token is the first after 'mm-' (protocol point 2 keeps
+    # it '-'-free), so extra '-' tokens are the ROLE (seat host), not
+    # ambiguity: the split stays decidable
+    assert mm.mm_model_of("att-mm-glm-53f-x-abc123") == "glm"
+    assert mm.mm_model_of("att-mm--x-abc123") is None      # empty model
     assert mm.mm_model_of("att-mm-mimo-notsix!)") is None   # malformed hex
     # refname safety: grammar-compatible labels stay in the safe alphabet
     for att in ("att-mm-glm.5.3f-example-host-a-abc123", "att-mm-mimo_w2-ce0s42"):
