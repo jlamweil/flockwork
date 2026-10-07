@@ -1,4 +1,7 @@
-# flockwork — the swarm that runs like clockwork
+# REFS-MODEL — the flockwork refs model, tightly
+
+The root `README.md` is the public entry point; this page is the tight
+model doc: the refs diagram, the five verbs, and the honesty laws.
 
 **flockwork** is a worker swarm whose **entire coordination substrate
 is git itself**: no server, no database, no queue daemon — a shared

@@ -94,6 +94,6 @@ repeat steps 2–8. The scripted version accepts
 `hello-demo` on whatever you name, so name carefully. Never point
 `SWARM_ORIGIN` at an origin you don't own while experimenting.
 
-Deeper design: `DESIGN-NEXT.md`. What each ref means: `README-IMPROVED.md`.
+Deeper design: `DESIGN-NEXT.md`. What each ref means: `docs/REFS-MODEL.md`.
 Never seen any of this and want the full narrative + glossary first:
 `docs/00-ORIENTATION.md`.

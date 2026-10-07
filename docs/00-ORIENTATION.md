@@ -82,7 +82,7 @@ line one.
 | `demo/demo-spec.json` | the demo task's brief (`hello.txt` + `verify:`) | you want to see what a task looks like |
 | `demo/trivial_fixer.sh` | deterministic stand-in for the model dispatch | you wonder what "dispatch" means |
 | `demo/duplicate_claim.sh` | deliberate second-claim probe (CAS rejection) | you want to watch exactly-once hold |
-| `README-IMPROVED.md` | refs-model diagram + the five verbs + honesty laws | you want the model, tightly |
+| `docs/REFS-MODEL.md` | refs-model diagram + the five verbs + honesty laws | you want the model, tightly |
 | `l2/inrepo.py` | the machinery: every verb, ref write, and gate | you change or audit behavior |
 | `tests/` | pytest suite (TDD red→green history in git log) | you touch `l2/` |
 | `l2/metrics.py` | optional JSONL observer + summary judge | you instrument pilots |
@@ -95,7 +95,7 @@ line one.
 
 - **"Just show it working."** → `QUICKSTART.md` (or
   `demo/owner_test.sh --keep` to keep the board for poking).
-- **"Understand the refs."** → `README-IMPROVED.md` § The refs model,
+- **"Understand the refs."** → `docs/REFS-MODEL.md` § The refs model,
   then the glossary below.
 - **"What does a verdict mean?"** → `QUICKSTART.md` step 6 and
   "Reading a verdict" below.
@@ -188,4 +188,5 @@ the real production origin (default `SWARM_ORIGIN` points there —
 override before experimenting). *D-INREPO* — the design decision that
 this repo is its own substrate. *WQ-xxx / INT-xxx* — the work-queue
 and intent ids stamping each git-log entry; see the driver repo's
-`ops/` for the ledger.
+`ops/` for the ledger — those `ops/` files live in a separate private
+driver repo, not in this tree.
