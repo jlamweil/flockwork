@@ -125,5 +125,4 @@ DESIGN-NEXT.md    design record and what comes next
 
 ## License
 
-License: **to be decided.** No LICENSE file ships with this tree yet;
-the owner has the call.
+Apache License 2.0 (see LICENSE).
