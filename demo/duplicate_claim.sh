@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# swarmo test kit — deliberate duplicate-claim probe.
+# flockwork test kit — deliberate duplicate-claim probe.
 #
 # Shows the create-once CAS from the outside: claim a task that ALREADY
 # has a live claim. Git must reject the second ref write (`! [rejected]

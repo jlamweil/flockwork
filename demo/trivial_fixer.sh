@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# swarmo test kit — deterministic stand-in for the model dispatch leg.
+# flockwork test kit — deterministic stand-in for the model dispatch leg.
 #
 # The real lane dispatches the task brief with `opencode run --pure -m
 # <model> <brief>` (or another external driver). This shim ignores its

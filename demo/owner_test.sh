@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# swarmo owner test kit — the whole coordination loop, end to end.
+# flockwork owner test kit — the whole coordination loop, end to end.
 #
 # Idempotent: every run builds a FRESH scratch origin (a local bare
 # repo under /tmp) and drives it through the full lifecycle —
@@ -11,7 +11,7 @@
 #
 # usage:
 #   demo/owner_test.sh              # scratch origin, torn down at the end
-#   demo/owner_test.sh --keep       # keep /tmp/swarmo-owner-demo for manual play
+#   demo/owner_test.sh --keep       # keep /tmp/flockwork-owner-demo for manual play
 #   demo/owner_test.sh --origin URL # DANGER: run against a real origin instead
 #
 # Requires: git, python3. Run from anywhere (it cds to the repo root).
@@ -20,7 +20,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
 
-SCRATCH_BASE="${TMPDIR:-/tmp}/swarmo-owner-demo"
+SCRATCH_BASE="${TMPDIR:-/tmp}/flockwork-owner-demo"
 TARGET_ORIGIN=""
 KEEP=0
 while [ $# -gt 0 ]; do

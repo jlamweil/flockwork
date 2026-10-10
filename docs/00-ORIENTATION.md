@@ -8,8 +8,7 @@ line one.
 
 ## The project in 15 sentences
 
- 1. **flockwork** (the code, CLI, and history carry the working name
-    **swarmo** — same product) coordinates a swarm of
+ 1. **flockwork** coordinates a swarm of
     AI coding workers using nothing but git.
 2. There is no server, no database, and no queue daemon: all
    coordination state lives as git **refs** under `refs/swarm/*` on one
@@ -117,8 +116,6 @@ the test suite's own pattern) → refuse.
   every watching worker can see.
 - **"Is my board healthy?"** → `python3 l2/inrepo.py audit` —
   `h1_pass: true` is green.
-- **"Why two names?"** → the root `README.md` (flockwork is the product;
-  `swarmo` is the CLI/repo working name — `refs/swarm/*` never renames).
 - **"Build a board for real workers."** → `docs/SCRATCH-BOARDS.md` — the HEAD
   law + smoke test; a board whose clones check out nothing is broken, and the
   lane cannot tell you (clone rc is 0 either way).
@@ -194,8 +191,8 @@ combination separates environmental deaths from merit failures.
 refs alone. *exactly-once* — one claim wins per task per attempt; it
 is the ref CAS, not a lock.
 
-**Names & places:** *flockwork / swarmo* — same product; the CLI and
-repo internals keep the working name `swarmo`. *the board / origin* —
+**Names & places:** *flockwork* — the product (the CLI and the code).
+*the board / origin* —
 the git remote that hosts `refs/swarm/*`; you point at it with
 `SWARM_ORIGIN` (the shipped code has **no** default origin — unset is a
 typed refusal, see the no-default-origin law). *D-INREPO* — the design

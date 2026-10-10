@@ -160,8 +160,8 @@ def git(*args, cwd=None, inp=None):
 # event reported verdict_pushed true with no verdict ever written. The
 # identity is now always carried (-c), the commit result is checked
 # before any push, and a failed commit NEVER becomes a push.
-LANE_EMAIL = "swarmo-lane@refs-cas.local"
-LANE_NAME = "swarmo refs-CAS"
+LANE_EMAIL = "flockwork-lane@refs-cas.local"
+LANE_NAME = "flockwork refs-CAS"
 
 
 def _commit_tree_id_args():

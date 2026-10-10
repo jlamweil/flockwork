@@ -1,7 +1,7 @@
 # QUICKSTART — run a flockwork race yourself, on a scratch board
 
-> product name: flockwork — "the swarm that runs like clockwork" (CLI
-> examples below keep the working name `swarmo`: `python3 l2/inrepo.py …`).
+> product name: flockwork — "the swarm that runs like clockwork" (the CLI
+> is `flockwork`, or `python3 l2/inrepo.py …`).
 
 First time here? A **ref** is just a named git pointer (`git ls-remote`
 lists them) — flockwork coordinates workers entirely through refs under
@@ -28,11 +28,11 @@ Stepping through it by hand instead — every line is copy-pasteable:
 #    every worker you launch from this shell) reads it to find the origin.
 #    Forgotten? The command refuses with OriginUnsetError — there is no
 #    default origin.
-rm -rf /tmp/swarmo-owner-demo && mkdir -p /tmp/swarmo-owner-demo
-git init -q --bare /tmp/swarmo-owner-demo/origin.git
-git -C /tmp/swarmo-owner-demo/origin.git symbolic-ref HEAD refs/heads/main
-git push -q /tmp/swarmo-owner-demo/origin.git HEAD:refs/heads/main
-export SWARM_ORIGIN=/tmp/swarmo-owner-demo/origin.git
+rm -rf /tmp/flockwork-owner-demo && mkdir -p /tmp/flockwork-owner-demo
+git init -q --bare /tmp/flockwork-owner-demo/origin.git
+git -C /tmp/flockwork-owner-demo/origin.git symbolic-ref HEAD refs/heads/main
+git push -q /tmp/flockwork-owner-demo/origin.git HEAD:refs/heads/main
+export SWARM_ORIGIN=/tmp/flockwork-owner-demo/origin.git
 
 # 2. seed the demo task (declares refs/swarm/specs/hello-demo)
 python3 l2/inrepo.py seed demo/demo-spec.json
@@ -64,7 +64,7 @@ git ls-remote "$SWARM_ORIGIN" 'refs/swarm/*'
 #      host: w1                field named host, value = the worker name
 #      oc_rc: 0                dispatch exit code (124 would mean timeout)
 #      pytest_rc: 0            oracle exit code
-git -C /tmp/swarmo-owner-demo/origin.git log -1 --format=%B refs/swarm/verdicts/hello-demo
+git -C /tmp/flockwork-owner-demo/origin.git log -1 --format=%B refs/swarm/verdicts/hello-demo
 
 # 7. audit the board — h1_pass true means every claim returned with a verdict
 python3 l2/inrepo.py audit hello-demo
@@ -73,7 +73,7 @@ python3 l2/inrepo.py audit hello-demo
 demo/duplicate_claim.sh hello-demo
 
 # 9. tear the board down
-rm -rf /tmp/swarmo-owner-demo
+rm -rf /tmp/flockwork-owner-demo
 ```
 
 What you just saw: two workers raced for one task; exactly one claim

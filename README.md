@@ -7,8 +7,7 @@ verdicts, and every guarantee (exactly-once work, honest outcomes,
 bounded retries) reduces to a git property you can verify with
 `ls-remote` and `cat-file`. This repo doubles as its own substrate
 (**D-INREPO**): the machinery lives in `l2/inrepo.py`, and workers
-coordinate through refs on the project's own origin. (The code, CLI, and
-repo internals keep the working name `swarmo` — same product.)
+coordinate through refs on the project's own origin.
 
 > **New to swarms, git refs, or both?** `docs/00-ORIENTATION.md` is the
 > zero-context orientation: the project in 15 sentences, how the pieces

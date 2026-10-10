@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.2
+
+- Single name: the product is `flockwork` throughout. The internal working
+  name `swarmo` is gone from the docs, the demo kit, the scratch-board paths,
+  and the lane's git commit identity (`flockwork refs-CAS` /
+  `flockwork-lane@refs-cas.local`). No behavior change; suite unchanged.
+
 ## v0.2.1
 
 - Public-source hygiene: removed internal development-process references
