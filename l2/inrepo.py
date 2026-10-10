@@ -819,14 +819,30 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         }
     # L4 oracle: task-specified verify command, else host pytest in the
     # task dir (first dir under tasks/). bash -lc so the host's pyenv
-    # pytest resolves (c6 recipe).
+    # pytest resolves. The oracle leg carries its own bound —
+    # SWARM_ORACLE_TIMEOUT (default 600s) — enforced with coreutils
+    # `timeout` around the verify command, so a hung verify (a network
+    # wait, an interactive prompt, an infinite loop in the fixed code)
+    # degrades to an honest measured result (rc 124) instead of sitting
+    # the worker down for the full floor or leaking a TimeoutExpired out
+    # of _work_task into the catch-all, which would misclassify a
+    # completed dispatch as a failed one.
+    oracle_timeout = int(os.environ.get("SWARM_ORACLE_TIMEOUT", "600"))
     if verify:
-        pr = sh(["bash", "-lc", verify], cwd=tree)
+        pr = sh(["timeout", str(oracle_timeout), "bash", "-lc", verify], cwd=tree)
     else:
         tdir = os.path.join(tree, "tasks", task)
         if not os.path.isdir(tdir):
             tdir = tree
-        pr = sh([sys.executable, "-m", "pytest", "-q"], cwd=tdir)
+        pr = sh(
+            ["timeout", str(oracle_timeout), sys.executable, "-m", "pytest", "-q"],
+            cwd=tdir,
+        )
+    # rc 124 is coreutils `timeout`'s verdict on the leg's own bound: the
+    # verify command died at the oracle timeout, not a measured exit. The
+    # flag marks exactly that shape (present only there — healthy rows
+    # carry no oracle_timeout key).
+    oracle_timed_out = pr.returncode == 124
     # an environmental death is never a fix, whatever the oracle says
     # (heir-exhausted path: the oracle may pass on an unchanged tree)
     fixed = pr.returncode == 0 and not env_death
@@ -876,6 +892,8 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             out["kept"] = kept
         if kept_err:
             out["kept_error"] = kept_err
+        if oracle_timed_out:
+            out["oracle_timeout"] = True
         return out
     # return commit on main lineage with the att trailer; concurrent
     # workers push main too — on non-FF, rebase onto origin and retry

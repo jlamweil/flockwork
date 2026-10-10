@@ -1,0 +1,28 @@
+# Changelog
+
+## v0.2.0
+
+- **Oracle-leg timeout** (`SWARM_ORACLE_TIMEOUT`, default 600s): the verify
+  command is now run under coreutils `timeout`, so a hung oracle (a network
+  wait, an interactive prompt, an infinite loop in the fixed code) degrades to
+  an honest measured result — `pytest_rc: 124`, `oracle_timeout: true` —
+  instead of leaking a `TimeoutExpired` out of the worker. A completed
+  dispatch with a hung oracle is a merit final, not an env death: the claim
+  stays live for the reconcile TTL re-lease.
+- CI: a GitLab pipeline runs the test suite on push and build/twine-checks
+  the artifacts.
+- Added `CHANGELOG.md`.
+
+## v0.1.0
+
+- First public release: the git-native swarm that runs like clockwork.
+- In-repo `worker` loop (claim → dispatch → oracle verify → return →
+  verdict) with the dispatch legs (opencode headless + the generic `sh`
+  leg), the L1–L4 oracle stack, and the honest verdict/return/claim refs.
+- The `flockwork` CLI (seed / worker / claim / returns / sweep /
+  reconcile / reconcile-loop / inspect / audit / audit-metrics) and the
+  DORA metrics layer.
+- Schema gates (spec / review / verdict) so a bad seed is an env death
+  before dispatch, never a false green.
+- `demo/` (one command) and `docs/` (QUICKSTART + OPERATIONS).
+- License: Apache-2.0.

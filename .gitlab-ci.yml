@@ -1,0 +1,30 @@
+image: python:3.11
+
+default:
+  variables:
+    GIT_DEPTH: "1"
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+stages:
+  - test
+  - build
+
+test:
+  stage: test
+  before_script:
+    - python -m pip install --no-cache-dir pytest
+  script:
+    - python -m pytest tests/ -q
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+build:
+  stage: build
+  before_script:
+    - python -m pip install --no-cache-dir build twine
+  script:
+    - python -m build
+    - twine check --strict dist/*
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
