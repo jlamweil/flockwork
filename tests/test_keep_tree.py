@@ -1,11 +1,10 @@
-"""Contract for FLOCKWORK_KEEP_TREE (WQ-031, INT-085): preserve the
+"""Contract for FLOCKWORK_KEEP_TREE: preserve the
 attempt tree of a merit-failed dispatch so a failure is auditable.
 
-The pilots measured the gap (WQ-025): a merit failure — dispatch ran,
+The gap was measured: a merit failure — dispatch ran,
 oc_rc 0, verify oracle failed — used to destroy the attempt tree in
 work_task's finally-block rmtree, leaving zero artifact of what the
-model wrote. The switch is shaped exactly like the metrics layer
-(WQ-024's contract):
+model wrote. The switch is shaped exactly like the metrics layer:
 
   - env-switched: FLOCKWORK_KEEP_TREE=1 enables; OFF (the default) is
     byte-identical wire behavior — the tree is removed exactly as

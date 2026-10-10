@@ -1,7 +1,7 @@
-"""Contract for the flockwork metrics layer (WQ-024, INT-085a).
+"""Contract for the flockwork metrics layer.
 
-We cannot judge what we cannot measure: the pilots (next queue entry)
-will be judged with this layer, so its own contract is frozen first.
+We cannot judge what we cannot measure: the work is judged with this
+layer, so its own contract is frozen first.
 The layer OBSERVES, never alters wire behavior:
 
   - env-switched: FLOCKWORK_METRICS=1 enables; OFF (default) means no
@@ -304,7 +304,7 @@ def test_lease_expiry_and_eviction_recorded(monkeypatch, tmp_path):
                for r in refs)
 
 
-# ------------------------------------------------- the DORA five (WQ-043)
+# ------------------------------------------------- the DORA five
 #
 # The DORA mapping (layer 1):
 # deployment frequency = landed verdicts per day; lead time = seed ->
@@ -482,7 +482,7 @@ def test_dora_seed_events_counted_in_summary_counts():
     assert s["counts"]["seed"] == 1
 
 
-# ------------------------------------------- e2e: the pilot-shaped runs
+# ------------------------------------------- e2e: the end-to-end runs
 
 
 def _shim(tmp_path, name, body):
@@ -545,7 +545,7 @@ def test_e2e_env_death_yields_heir_then_exhausted_verdict(
     """A dispatch that dies leaving no work is an environmental death:
     first death requeues (the heir law), second spends the budget and
     writes the final fixed:false verdict. The metrics must show the
-    crash->revive shape the pilots will be judging."""
+    crash->revive shape."""
     rc, events = _run_worker(tmp_path, monkeypatch, "exit 1")
     assert rc == 0
     attempted = [e for e in events if e.get("event") == "attempted"]

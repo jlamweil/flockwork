@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""flockwork ref schemas — the schema IS the instruction (INT-081
-TAKE 1, landed by WQ-054).
+"""flockwork ref schemas — the schema IS the instruction.
 
 A ref the lane acts on must carry the fields the actor needs; a ref
 that fails its schema is refused LOUDLY at the moment of use, naming
 the missing field — never a silent pass. Two schemas, both minimal:
 
   spec (refs/swarm/specs/<task>, validated at claim time — the
-  WQ-025 pilot class this kills: attempts dispatched on
-  underspecified seeds and stalled):
-      what      the brief body itself — non-empty (the wave-9 law,
-                now a named schema field)
+  class this kills: attempts dispatched on underspecified seeds and
+  stalled):
+      what      the brief body itself — non-empty
+                (now a named schema field)
       verify    the done-bar, one machine-checkable `verify:` line
                 (the L4 oracle reads it; a constraint the verify
-                chain cannot check is decoration — the WQ-025
-                lesson-a law, now enforced)
+                chain cannot check is decoration, now enforced)
 
   review-verdict (refs/swarm/verdicts/<task>@<reviewer>, validated
   before counting — docs/GATES.md §2, here as the definition of
@@ -76,8 +74,7 @@ def validate_spec(body):
                ln.strip()[len("verify:"):].strip()
                for ln in (body or "").splitlines()):
         errs.append("missing required field: verify (the done-bar — "
-                    "no machine-checkable oracle line, the WQ-025 "
-                    "stall class)")
+                    "no machine-checkable oracle line)")
     return errs
 
 

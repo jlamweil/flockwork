@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""flockwork metrics layer (INT-085a) — measure the swarm, touch no wire.
+"""flockwork metrics layer — measure the swarm, touch no wire.
 
-We cannot judge what we cannot measure: the pilots are judged with this
+We cannot judge what we cannot measure: the work is judged with this
 layer's numbers, so the layer itself is contract-frozen
 (tests/test_metrics.py) and STRICTLY an observer. Lane operations
 determine their results exactly as before; the layer records them.
@@ -20,7 +20,7 @@ float on every line):
                 structural (broken environment; a re-scan cannot heal it)
   verdict       task/worker/att/fixed/oc_rc/pytest_rc/verdict_pushed —
                 the attempt's judged outcome as the refs carry it
-  heir          a crash archived and its heir requeued (c6 law):
+  heir          a crash archived and its heir requeued:
                 requeued/swept/sweep_error/reason
   crash         work_task_error: the attempt died unnaturally,
                 claim_freed records whether the best-effort release won
@@ -33,7 +33,7 @@ or set the same absolute path so one summary sees the whole run). A
 failed write is reported once on stderr and otherwise ignored: a broken
 instrument must never break the lane.
 
-Summary — the pilots' judge:
+Summary — the judge:
   python3 -m l2.metrics [files...]     # default: the sink file
   python3 -m l2.metrics --dora [files...]
 prints counts, the claim reject rate, claim->verdict latency
@@ -83,7 +83,7 @@ def emit(event: str, **fields):
 def observe_attempt(out: dict) -> None:
     """Classify one attempt outcome (the dict _work_task returns) into
     the layer's vocabulary. A verdict-carrying outcome emits `verdict`;
-    a requeue decision (the c6 heir machinery, including the rejected
+    a requeue decision (the heir machinery, including the rejected
     main-push requeue) also emits `heir`. Never called when disabled."""
     if out.get("event") != "attempted":
         return
@@ -154,7 +154,7 @@ def _pctl(sorted_vals: list[float], q: float):
 
 
 def summarize(events: list[dict], malformed: int = 0) -> dict:
-    """The pilots' judge: counts, reject rate, latency percentiles,
+    """The judge: counts, reject rate, latency percentiles,
     verdict outcomes. Pure over the event list — files are a CLI
     concern."""
     counts = {k: 0 for k in KINDS}

@@ -1,7 +1,7 @@
-"""Contract for the flockwork verdict-count gate (WQ-025, INT-085b pilot 1).
+"""Contract for the flockwork verdict-count gate.
 
-The design is docs/GATES.md (landed through flockwork itself — the
-pilot's wave-A task); this suite pins every falsifiable property its
+The design is docs/GATES.md (landed through flockwork itself);
+this suite pins every falsifiable property its
 section 7 lists. The gate is pure substrate: create-once CAS on the
 same git refspace the lane already uses, no new wire semantics.
 
@@ -42,7 +42,7 @@ def _ok(r):
 
 
 def _origin(tmp_path):
-    """Scratch bare origin with one commit on main (the T5 shape)."""
+    """Scratch bare origin with one commit on main."""
     o = tmp_path / "origin.git"
     _git("init", "-q", "--bare", str(o))
     _git("-C", str(o), "symbolic-ref", "HEAD", "refs/heads/main")

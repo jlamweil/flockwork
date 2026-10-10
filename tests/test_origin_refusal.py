@@ -1,8 +1,8 @@
-"""Contract: there is NO default origin (WQ-093, INT-085).
+"""Contract: there is NO default origin.
 
 The law's default at l2/inrepo.py used to be the PRODUCTION board, so
 any seat that forgot SWARM_ORIGIN pushed seed/verdict/spec refs straight
-into production — several near-misses. The WQ-093 law:
+into production — several near-misses. The law:
 
   - the module constant ORIGIN carries NO default (None when
     SWARM_ORIGIN was unset at import) and the production URL appears
@@ -10,11 +10,10 @@ into production — several near-misses. The WQ-093 law:
   - every origin resolution is explicit-arg > SWARM_ORIGIN at CALL
     time > import-time ORIGIN > OriginUnsetError naming the fix;
   - a write leg with no origin anywhere REFUSES before any git/ssh
-    contact; reads refuse the same way (the audit table, WQ-093
-    receipt: no live caller class relied on the default);
-  - the suite's own inrepo.ORIGIN-monkeypatch pattern (the wave-8
-    discipline) keeps working — the module attribute stays a legal
-    resolution source.
+    contact; reads refuse the same way (the audit table: no live
+    caller class relied on the default);
+  - the suite's own inrepo.ORIGIN-monkeypatch pattern keeps working —
+    the module attribute stays a legal resolution source.
 
 Every test here is hermetic: the production host is never contacted
 (ssh is a PATH stub that records and refuses); boards are local bare
@@ -223,7 +222,7 @@ except Exception as e:
 
 def test_module_attr_pattern_still_writes(tmp_path):
     """Overcorrection guard, green by design on BOTH sides of the fix:
-    the suite's wave-8 discipline (monkeypatch inrepo.ORIGIN) remains a
+    the suite's discipline (monkeypatch inrepo.ORIGIN) remains a
     legal resolution source when the env is unset."""
     sandbox = _bare(tmp_path / "sandbox.git")
     out = _child("attr-pattern", tmp_path, {})
@@ -235,9 +234,9 @@ def test_module_attr_pattern_still_writes(tmp_path):
 
 
 def test_call_time_env_wins_over_import(tmp_path):
-    """The T5 split-brain is dead: SWARM_ORIGIN re-bound AFTER import is
-    honored by the write legs (pre-fix, seed/claim/verdict pushes went
-    to the IMPORT-time constant — the wave-6 incident class)."""
+    """The import-time split-brain is dead: SWARM_ORIGIN re-bound AFTER
+    import is honored by the write legs (pre-fix, seed/claim/verdict
+    pushes went to the IMPORT-time constant)."""
     a = _bare(tmp_path / "a.git")
     b = _bare(tmp_path / "b.git")
     env = {"SWARM_ORIGIN": str(a)}  # bound at import...

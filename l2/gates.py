@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """flockwork verdict-count gate — n-of-m independent verdicts flip an
-integration ref (docs/GATES.md; INT-081 bridge, INT-085b pilot 1).
+integration ref (docs/GATES.md).
 
-Design landed through flockwork itself (pilot wave A); this module is
+Design landed through flockwork itself; this module is
 its implementation. Self-contained on purpose: stdlib only, its own
 git plumbing, no l2 imports — the gate must be liftable to any lane
 without carrying the wire's law file (the lawgate lone-law lesson).
@@ -65,7 +65,7 @@ def git(*args, cwd=None, inp=None):
 
 class OriginUnsetError(RuntimeError):
     """No origin to talk to: no explicit orig and SWARM_ORIGIN unset.
-    A config error, never a silent write (WQ-093, 2026-10-03). Kept
+    A config error, never a silent write. Kept
     name/shape-identical to l2/inrepo.py's — this module is
     deliberately self-contained (no l2 imports), so the two classes
     are textual twins by law, not by import."""
@@ -80,9 +80,9 @@ def origin():
     if not o:
         raise OriginUnsetError(
             "no origin: export SWARM_ORIGIN=<board-url> (or pass "
-            "orig=) — there is no default origin (WQ-093, 2026-10-03: "
-            "the old 'origin' remote-name default pushed gate writes "
-            "to whatever the cwd clone points at)"
+            "orig=) — there is no default origin; the old 'origin' "
+            "remote-name default pushed writes to whatever the cwd "
+            "clone points at"
         )
     return o
 
@@ -133,7 +133,7 @@ def _check_name(kind, name):
 def parse_review_verdict(body, task, reviewer):
     """docs/GATES.md §2 schema check. Returns (fields, error). The
     schema's definition of record is l2/refschema.py (the schema IS the
-    instruction, WQ-054); this delegation keeps one implementation, the
+    instruction); this delegation keeps one implementation, the
     inline body below is the staged-alone fallback."""
     if refschema is not None:
         fields, errs = refschema.validate_review_verdict(body, task,
@@ -290,7 +290,7 @@ def gate(task, orig=None, cwd=None):
           "fired": fired, "flipped": False,
           "already_integrated": False}
     if invalid:
-        # the typed schema refusals, loud in the event (WQ-054): a body
+        # The typed schema refusals, loud in the event: a body
         # that is not a verdict is never counted, and the field it is
         # missing is named. Absent entirely on a clean count — a
         # well-formed board's event gains no keys.

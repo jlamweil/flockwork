@@ -1,13 +1,12 @@
-"""Contract for the ref schemas (WQ-054, INT-081 TAKE 1 — the schema IS
-the instruction).
+"""Contract for the ref schemas (the schema IS the instruction).
 
 A task seed's spec ref must carry the fields a worker needs to act
 (the what = the brief body, the done-bar = the verify: line); a
 reviewer-verdict ref must carry the fields a gate needs to count
 (task, reviewer, outcome, evidence — docs/GATES.md §2). Malformed refs
 are a LOUD typed refusal at claim/gate time naming the missing field,
-never a silent pass — the failure mode being killed is the WQ-025
-pilot class: attempts dispatching on underspecified seeds and stalling.
+never a silent pass — the failure mode being killed: attempts
+dispatching on underspecified seeds and stalling.
 
 Minimality is the law: exactly two required spec fields, everything
 else optional (n:/m:, deliverable:, kind:, prose all stay data). The
@@ -16,15 +15,15 @@ already names its paths in prose or a deliverable: line — requiring a
 dedicated line would reject the kit's own demo spec. verify: IS
 required: it is the only machine-checkable done-bar (the L4 oracle
 reads it), and every seeded spec that ever passed a claim in this
-repo's suites and pilots carries one.
+repo's suites carries one.
 
 Adoption is additive: well-formed refs behave byte-identically (same
-events, same keys, same outcomes); the refusal rides the wave-9
-env-death-before-dispatch machinery (heir-gated — wave-10's churn
-law) because a schema-invalid spec is exactly that class, finer
-grained; and a law file staged without the l2/ sibling still boots
-with NO schema enforcement — the pre-schema law (the lawgate
-lone-law pattern, WQ-024/WQ-032 contract).
+events, same keys, same outcomes); the refusal rides the
+env-death-before-dispatch machinery (heir-gated — the churn law)
+because a schema-invalid spec is exactly that class, finer grained;
+and a law file staged without the l2/ sibling still boots with NO
+schema enforcement — the pre-schema law (the lawgate lone-law
+pattern).
 """
 import importlib.util
 import json
@@ -66,7 +65,7 @@ def _ok(r):
 
 
 def _origin(tmp_path):
-    """Scratch bare origin with one commit on main (the house T5 shape)."""
+    """Scratch bare origin with one commit on main."""
     o = tmp_path / "origin.git"
     _git("init", "-q", "--bare", str(o))
     _git("-C", str(o), "symbolic-ref", "HEAD", "refs/heads/main")
@@ -232,10 +231,10 @@ def _run_worker(tmp_path, monkeypatch, spec_body, shim_body):
 
 def test_claim_on_spec_without_done_bar_is_typed_refusal_before_dispatch(
         tmp_path, monkeypatch):
-    """The WQ-025 stall class, killed: a spec with no machine-checkable
+    """The stall class, killed: a spec with no machine-checkable
     done-bar is refused the moment its claimant reads it — typed reason
-    naming verify:, zero dispatch (the shim never runs), and the wave-10
-    churn law applies (first death requeues, budget buys one heir, the
+    naming verify:, zero dispatch (the shim never runs), and the churn
+    law applies (first death requeues, budget buys one heir, the
     heir's refusal goes FINAL as the honest fixed:false verdict)."""
     rc, events, canary = _run_worker(
         tmp_path, monkeypatch,
@@ -281,7 +280,7 @@ def test_lone_law_without_schema_sibling_claims_unvalidated(
         tmp_path, monkeypatch):
     """inrepo.py staged without l2/ still boots AND keeps the pre-schema
     law: no sibling, no enforcement — the schema can never become a
-    dependency of the wire (the WQ-024/WQ-032 lone-law contract)."""
+    dependency of the wire (the lone-law contract)."""
     lone = tmp_path / "staged" / "inrepo.py"
     lone.parent.mkdir(parents=True)
     lone.write_text((REPO / "l2" / "inrepo.py").read_text())
@@ -341,9 +340,9 @@ def test_gate_refuses_malformed_verdict_typed_not_silent(tmp_path,
                                                          monkeypatch):
     """A verdict failing the §2 schema is a typed refusal at count time:
     never a vote, and the gate event NAMES the field (loud). The fire
-    predicate stays the landed n-of-valid `==` rule (the WQ-052
-    owner-pinned degeneracy, untouched) — the board here holds at
-    n=2 with one valid agree + one schema-refused body."""
+    predicate stays the landed n-of-valid `==` rule (the owner-pinned
+    degeneracy, untouched) — the board here holds at n=2 with one
+    valid agree + one schema-refused body."""
     o = _origin(tmp_path)
     w = _work_repo(tmp_path)
     monkeypatch.setenv("SWARM_ORIGIN", str(o))

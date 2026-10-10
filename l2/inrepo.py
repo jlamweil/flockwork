@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""l2/inrepo.py — the in-repo lane (LOOP round 4, V9-V12 verified).
+"""l2/inrepo.py — the in-repo lane.
 
 The project's OWN origin is the coordination substrate:
   refs/swarm/specs/<task>     task brief (root commit; fetched by workers)
   refs/swarm/claims/<task>    claim    (root commit, msg = claim <att>)
   refs/swarm/tasks/<task>     return   (fix commit on main lineage,
-                                        trailer `Attempt: <att>`)
+                                         trailer `Attempt: <att>`)
   refs/swarm/verdicts/<task>  verdict  (root commit, msg = verdict
-                                        task/attempt/fixed/host block)
+                                         task/attempt/fixed/host block)
 
-Laws encoded (from V9-V12):
+Laws encoded:
   L1  claims/verdicts are ROOT commits — never on main lineage.
   L2  CAS via --force-with-lease=refs/swarm/<kind>/<task>:
-      (empty base = create-once; known sha = own-record renewal).
-      Workers never read remote state to form expectations — the sha
-      comes from their own records (V12: works under hiding).
+       (empty base = create-once; known sha = own-record renewal).
+       Workers never read remote state to form expectations — the sha
+       comes from their own records (works under hiding).
   L3  dead attempts preserved at refs/swarm/archive/<kind>/<task>@<att>
-      in the SAME transaction that frees the live ref (c8 @-law).
-  L4  host pytest at the task dir is the verdict oracle (c9 law).
+       in the SAME transaction that frees the live ref (the @-marker
+       archive law).
+  L4  host pytest at the task dir is the verdict oracle.
 
 Usage (run from a worker clone of the origin):
   python3 l2/inrepo.py seed SPEC.json     # push spec refs for tasks
@@ -27,8 +28,8 @@ Usage (run from a worker clone of the origin):
       # SWARM_ALLOW_DIVERGED=1 bypasses, recorded in the event stream)
   python3 l2/inrepo.py audit [tasks...]   # read-only H1/H2 over refs
   python3 l2/inrepo.py review <task> <reviewer> <agree|veto>
-      [evidence-ref]   # reviewer verdict, create-once (WQ-032: the
-      # pilot's gate module l2/gates.py through the law's CLI surface;
+      [evidence-ref]   # reviewer verdict, create-once (the gate
+      # module l2/gates.py through the law's CLI surface;
       # docs/GATES.md — n-of-m verdicts flip refs/swarm/integrated/<task>)
   python3 l2/inrepo.py gate <task>   # verdict-count gate: fires iff
       # count(agree)==n and count(veto)==0 with evidence resolving;
@@ -36,7 +37,7 @@ Usage (run from a worker clone of the origin):
   python3 l2/inrepo.py sweep ORIGIN TASK [ATT]  # archive+free swarm refs
   python3 l2/inrepo.py reconcile [ORIGIN] [TTL_S]  # sweep stale claims
   python3 l2/inrepo.py correction-graph [ORIGIN]  # multi-model attempt
-      # graph from refs alone (INT-016 seed; read-only)
+      # graph from refs alone (read-only)
 """
 
 from __future__ import annotations
@@ -85,8 +86,8 @@ except ImportError:  # loaded by path (tests, drivers): resolve the sibling
         # inrepo.py copies — the lawgate pattern): the lane BOOTS with
         # NO gate. Unlike metrics (observe-only), the gate verbs MUTATE
         # the board, so their fallback is an honest rc-2 refusal at use
-        # — never a success-shaped no-op (the wave-11 law: a mutating
-        # operation that did not happen never reports success).
+        # — never a success-shaped no-op (a mutating operation that
+        # did not happen never reports success).
         gates = None
 
 try:
@@ -97,14 +98,14 @@ except ImportError:  # loaded by path (tests, drivers): resolve the sibling
         import refschema
     except ImportError:
         # staged alone (the lawgate pattern): the lane boots with NO
-        # schema enforcement — the pre-schema law exactly (wave-9's
+        # schema enforcement — the pre-schema law exactly (the
         # empty-spec check only). Adoption is additive: the schemas
-        # (l2/refschema.py, WQ-054) refuse malformed refs at claim/gate
+        # (l2/refschema.py) refuse malformed refs at claim/gate
         # time, well-formed refs behave byte-identically, and the schema
         # can never become a dependency of the wire.
         refschema = None
 
-# WQ-093 (2026-10-03): NO default origin. The default here used to be
+# NO default origin. The default here used to be
 # a production board, so any seat that forgot SWARM_ORIGIN would have
 # pushed seed/verdict/spec refs straight into production. Every origin
 # resolution goes through resolve_origin(): explicit arg > SWARM_ORIGIN
@@ -124,9 +125,9 @@ def resolve_origin(explicit: str | None = None) -> str:
     if not o:
         raise OriginUnsetError(
             "no origin: export SWARM_ORIGIN=<board-url> (or pass the "
-            "origin explicitly) — there is no default origin (WQ-093, "
-            "2026-10-03: the old production default would have pushed "
-            "seat writes straight to the production board)"
+            "origin explicitly) — there is no default origin; the old "
+            "production default would have pushed writes straight to "
+            "the production board"
         )
     return o
 
@@ -151,7 +152,7 @@ def git(*args, cwd=None, inp=None):
     return sh(["git", *args], cwd=cwd, inp=inp)
 
 
-# Ref-CAS identity + no-phantom-push law (INT-013 wave 5, 2026-09-28).
+# Ref-CAS identity + no-phantom-push law.
 # The claim/verdict/spec writes used ambient git identity; on a node
 # without user.email/user.name (first seen from a throwaway-HOME driver)
 # `commit-tree` fails and the EMPTY sha flowed into the refspec —
@@ -218,7 +219,7 @@ def empty_tree():
     return git("hash-object", "-t", "tree", "/dev/null").stdout.strip()
 
 
-# wave-8 (INT-013, 2026-09-29): the archive-marker law embeds @att in
+# The archive-marker law embeds @att in
 # refnames, so every lane read (open_tasks, sweep, audit) excludes
 # @-carrying refs BY DESIGN. A task name carrying @ would seed/claim a
 # ref no lane machinery can ever see or sweep — a permanent zombie
@@ -288,12 +289,11 @@ def claim_detail(worker: str, task: str, origin=None) -> dict:
     any failure; rc/stderr let the caller tell a lost race (rc 1,
     `! [rejected] … (stale info)` — healthy contention, re-scan) from a
     structurally broken environment (rc 128 not-a-repo / unreachable …
-    — the same honesty the scan side owes: measured 2026-09-20,
-    addendum 4)."""
+    — the same honesty the scan side owes)."""
     origin = resolve_origin(origin)
     att = f"att-{worker}-{os.urandom(3).hex()}"
     if not task_name_is_safe(task):
-        # wave-8 defense in depth: classify_claim_failure maps rc 128 to
+        # Defense in depth: classify_claim_failure maps rc 128 to
         # 'structural', so the worker stops honestly instead of spinning.
         if metrics.enabled():
             metrics.emit("claim", task=task, worker=worker, att=None, rc=128,
@@ -305,7 +305,7 @@ def claim_detail(worker: str, task: str, origin=None) -> dict:
                      origin=origin)
     res = {"att": att if ok(r) else None, "rc": r.returncode,
            "stderr": r.stderr or ""}
-    # INT-085a metrics (observe-only): the attempt AND its CAS verdict
+    # metrics (observe-only): the attempt AND its CAS verdict
     # (won / race = duplicate-rejection / structural) are data; recorded
     # only after the lane's own result exists, which it never changes.
     if metrics.enabled():
@@ -328,7 +328,7 @@ def claim(worker: str, task: str) -> str | None:
 def classify_claim_failure(rc: int, stderr: str) -> str:
     """'race' = healthy contention (re-scan is correct); 'structural' =
     the environment is broken (a re-scan spins forever). Two measured
-    race shapes (2026-09-20): `! [rejected] … (stale info)` when the
+    race shapes: `! [rejected] … (stale info)` when the
     ref existed before the push, and `! [remote rejected]` +
     `cannot lock ref … reference already exists` when it lands
     concurrently — the live 2-worker probe caught the second shape
@@ -376,12 +376,12 @@ def heirs_count(origin: str, task: str) -> int:
     """Archived dead attempts for a task — each archive/claims ref is one
     environmental death already recorded (by reconcile or self-requeue).
 
-    wave-13 (INT-013, 2026-09-29): the read is rc-CHECKED. It feeds the
-    c6 one-heir gate (every requeue decision in _work_task); the old
-    unchecked git() returned 0 on an unreachable origin — a lie that
-    silently OPENED the heir budget (every fresh requeue looks
-    budget-fresh) exactly when the lane cannot see its own archive. A
-    reachable empty archive still counts 0."""
+    The read is rc-CHECKED. It feeds the one-heir gate (every requeue
+    decision in _work_task); the old unchecked git() returned 0 on an
+    unreachable origin — a lie that silently OPENED the heir budget
+    (every fresh requeue looks budget-fresh) exactly when the lane
+    cannot see its own archive. A reachable empty archive still
+    counts 0."""
     r = git("ls-remote", origin, f"refs/swarm/archive/claims/{task}@*")
     if not ok(r):
         raise RuntimeError(
@@ -391,13 +391,12 @@ def heirs_count(origin: str, task: str) -> int:
 
 
 def _heir_gate(task: str) -> tuple[bool, str | None]:
-    """The c6 one-heir gate, origin-failure-safe (wave 13, INT-013,
-    2026-09-29). Returns (budget_fresh, error): error non-None means the
-    origin died mid-attempt and the gate could not be evaluated — the
-    caller records the death honestly (the claim stays live for
-    reconcile's TTL) instead of acting on a gate value it does not
-    know, and never crashes into the worker's work_task_error
-    catch-all with zero c6 accounting."""
+    """The one-heir gate, origin-failure-safe. Returns (budget_fresh,
+    error): error non-None means the origin died mid-attempt and the
+    gate could not be evaluated — the caller records the death honestly
+    (the claim stays live for reconcile's TTL) instead of acting on a
+    gate value it does not know, and never crashes into the worker's
+    work_task_error catch-all with zero heir accounting."""
     try:
         return (
             heirs_count(resolve_origin(), task)
@@ -409,7 +408,7 @@ def _heir_gate(task: str) -> tuple[bool, str | None]:
 
 
 def _guarded_sweep(task: str) -> tuple[dict | None, str | None]:
-    """sweep() with the origin-death recorded, never raised (wave 13):
+    """sweep() with the origin-death recorded, never raised:
     the requeue legs run exactly when the substrate is flapping — a
     failure returns (None, error) so the attempt's event stays
     structured (requeued False + sweep_error) instead of crashing."""
@@ -420,7 +419,7 @@ def _guarded_sweep(task: str) -> tuple[dict | None, str | None]:
 
 
 def keep_tree_enabled() -> bool:
-    """FLOCKWORK_KEEP_TREE=1 (WQ-031): preserve a merit-failed attempt's
+    """FLOCKWORK_KEEP_TREE=1: preserve a merit-failed attempt's
     tree so a failure is auditable — the metrics layer's contract shape
     (env-switched, observe-only; off = byte-identical wire behavior)."""
     return os.environ.get("FLOCKWORK_KEEP_TREE") == "1"
@@ -460,14 +459,13 @@ def work_task(worker: str, task: str, att: str) -> dict:
 
     Owns the attempt's scratch tree: created here, removed when the
     attempt ends (any path) — the tree is never read after a return,
-    and an abandoned clone per attempt littered the host (568 dirs
-    measured 2026-09-21). The one exception is FLOCKWORK_KEEP_TREE's
-    merit-fail keep (WQ-031): the tree is MOVED to the keep dir inside
-    _work_task before the verdict is written, so the finally-rmtree
-    below finds nothing and removes nothing. The c6 requeue rule lives
-    in _work_task.
+    and an abandoned clone per attempt littered the host. The one
+    exception is FLOCKWORK_KEEP_TREE's merit-fail keep: the tree is
+    MOVED to the keep dir inside _work_task before the verdict is
+    written, so the finally-rmtree below finds nothing and removes
+    nothing. The requeue rule lives in _work_task.
 
-    Carries the frozen c6 requeue rule: an environmental death
+    Carries the frozen requeue rule: an environmental death
     (dispatch failed leaving no work in the
     tree — timeout, model/provider death, clone failure) with no heir
     yet ARCHIVES the dead attempt and frees the claim in the same run,
@@ -478,7 +476,7 @@ def work_task(worker: str, task: str, att: str) -> dict:
     tree = tempfile_tree(task)
     try:
         out = _work_task(worker, task, att, tree)
-        # INT-085a metrics (observe-only): the attempt's judged outcome
+        # metrics (observe-only): the attempt's judged outcome
         # (verdict) and any requeue decision (heir) as the event carries
         # them — recorded after the fact, never instead of the return.
         if metrics.enabled():
@@ -489,34 +487,34 @@ def work_task(worker: str, task: str, att: str) -> dict:
 
 
 def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
-    # WQ-093: ONE origin resolved at attempt entry — clone, spec fetch,
+    # ONE origin resolved at attempt entry — clone, spec fetch,
     # main publish, return ref and every verdict push touch exactly it
-    # (the import-time split-brain class, wave 6, is dead).
+    # (the import-time split-brain class is dead).
     origin = resolve_origin()
     r = git("clone", "-q", origin, tree)
     if not ok(r):
-        # wave-15 (INT-013, 2026-09-29): the c6 one-heir budget gates the
-        # CLONE leg exactly as it gates the spec-death legs (wave 10) and
-        # the post-dispatch legs (wave 13). The unconditional sweep was
-        # the wave-10 DISCLOSED asymmetry: a permanently unclonable task
-        # (disk-full/quota on the worker host, a tree carrying a path the
-        # local fs rejects, a corrupted object) churned claim→clone-fail
-        # →sweep→requeue FOREVER — no TTL backstop (the claim is freed at
-        # once, so reconcile never sees a stale claim), no final verdict
-        # ever surfacing, one archive ref per cycle. Only the TRANSIENT
-        # half of the class self-heals — so the first death still requeues
-        # (the environment may heal), and under a spent budget the path
-        # writes the honest final fixed:false verdict (oc_rc 1 — no usable
-        # dispatch leg, never 0 which reads as merit; pytest_rc plain 1 —
-        # the oracle never ran; main + tasks ref untouched per the wave-2
-        # heir-exhausted law). An origin death MID-CLONE keeps the wave-13
-        # structured shape — the gate itself unevaluatable is recorded
-        # (claim live for reconcile), never a crash, never the lie-0.
+        # The one-heir budget gates the CLONE leg exactly as it gates
+        # the spec-death legs and the post-dispatch legs. The old
+        # unconditional sweep was an asymmetry: a permanently unclonable
+        # task (disk-full/quota on the worker host, a tree carrying a
+        # path the local fs rejects, a corrupted object) churned
+        # claim→clone-fail→sweep→requeue FOREVER — no TTL backstop (the
+        # claim is freed at once, so reconcile never sees a stale claim),
+        # no final verdict ever surfacing, one archive ref per cycle.
+        # Only the TRANSIENT half of the class self-heals — so the first
+        # death still requeues (the environment may heal), and under a
+        # spent budget the path writes the honest final fixed:false
+        # verdict (oc_rc 1 — no usable dispatch leg, never 0 which reads
+        # as merit; pytest_rc plain 1 — the oracle never ran; main +
+        # tasks ref untouched per the heir-exhausted law). An origin
+        # death MID-CLONE keeps the same structured shape — the gate
+        # itself unevaluatable is recorded (claim live for reconcile),
+        # never a crash, never the lie-0.
         budget_fresh, gate_err = _heir_gate(task)
         if gate_err is not None:
-            # wave-13 shape parity: the sibling requeue legs carry
+            # Shape parity: the sibling requeue legs carry
             # requeued/swept/sweep_error keys; this leg's origin-death
-            # event lacked them (found by the wave-15 contract).
+            # event lacked them.
             return {
                 "event": "attempted",
                 "worker": worker,
@@ -547,12 +545,12 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 ev["sweep_error"] = sweep_err
             return ev
         # budget spent: ONLY the final verdict is written — the claim
-        # stays LIVE (the wave-10 law this mirrors: sweeping here would
-        # re-open the churn at full speed — claim+verdict archived → the
-        # task instantly re-enters open_tasks → claim again, forever;
-        # the live claim is exactly what keeps the task out of the queue
-        # until reconcile's TTL re-lease, the lane's deliberate slow
-        # path), main and the tasks ref stay untouched.
+        # stays LIVE (sweeping here would re-open the churn at full
+        # speed — claim+verdict archived → the task instantly re-enters
+        # open_tasks → claim again, forever; the live claim is exactly
+        # what keeps the task out of the queue until reconcile's TTL
+        # re-lease, the lane's deliberate slow path), main and the tasks
+        # ref stay untouched.
         et = empty_tree()
         v_sha, v_proc = commit_tree(
             et,
@@ -580,27 +578,27 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         }
 
     def _env_death_before_dispatch(reason: str, err: str) -> dict:
-        """The attempt died between claim and dispatch (clone failure or,
-        wave-9, a missing/empty spec). Nothing was spent, so there is no
+        """The attempt died between claim and dispatch (clone failure or
+        a missing/empty spec). Nothing was spent, so there is no
         verdict, no return, and — unless the heir budget is spent — no
         final judgment: the claim is archived under its true att (the
         sweep law) and the task re-enters the queue.
 
-        wave-10 (INT-013, 2026-09-29): the sweep is NOT unconditional.
-        The c6 one-heir law gates here exactly as it gates post-dispatch
-        deaths — a PERMANENTLY broken spec (an empty brief that nothing
-        repairs) otherwise churns claim→death→sweep forever: a fast loop
-        with no TTL, no reconcile backstop (the claim is freed at once,
-        so reconcile never sees a stale claim), no final verdict ever
-        surfacing, and one archive ref added per cycle. First death
-        requeues (the spec may be mid-repair); under a spent budget the
-        path writes the honest final fixed:false verdict instead — the
-        oracle never ran, so pytest_rc stays a plain 1 and oc_rc is 1
-        (no usable dispatch leg — never 0, which reads as merit)."""
+        The sweep is NOT unconditional. The one-heir law gates here
+        exactly as it gates post-dispatch deaths — a PERMANENTLY broken
+        spec (an empty brief that nothing repairs) otherwise churns
+        claim→death→sweep forever: a fast loop with no TTL, no reconcile
+        backstop (the claim is freed at once, so reconcile never sees a
+        stale claim), no final verdict ever surfacing, and one archive
+        ref added per cycle. First death requeues (the spec may be
+        mid-repair); under a spent budget the path writes the honest
+        final fixed:false verdict instead — the oracle never ran, so
+        pytest_rc stays a plain 1 and oc_rc is 1 (no usable dispatch
+        leg — never 0, which reads as merit)."""
         budget_fresh, gate_err = _heir_gate(task)
         if gate_err is not None:
-            # wave-13: the origin died between the spec read and the c6
-            # gate — record the death honestly (the claim stays live for
+            # The origin died between the spec read and the heir gate —
+            # record the death honestly (the claim stays live for
             # reconcile's TTL); never the rc-blind lie-0, never a crash.
             return {
                 "event": "attempted",
@@ -633,7 +631,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 ev["sweep_error"] = sweep_err
             return ev
         # budget spent: ONLY the final verdict is written — main and the
-        # tasks ref stay untouched (the heir-exhausted law, wave-2).
+        # tasks ref stay untouched (the heir-exhausted law).
         et = empty_tree()
         v_sha, v_proc = commit_tree(
             et,
@@ -658,7 +656,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "requeued": None,
             "swept": None,
             "reason": f"{reason}_heir_exhausted",
-            # WQ-054: the typed refusal detail rides the FINAL event too
+            # The typed refusal detail rides the FINAL event too
             # (a schema refusal that exhausts the heir budget must still
             # name the missing field where the story ends, not only in
             # the requeued first attempt).
@@ -668,22 +666,22 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     git("-C", tree, "config", "user.email", f"{worker}@swarm")
     git("-C", tree, "config", "user.name", worker)
     # fetch the spec ref, read the brief (verify: line = task oracle)
-    # wave-9 (INT-013, 2026-09-29): the fetch was UNCHECKED. A missing or
-    # unreadable spec ref (a lost-ref transient — the same r2 class the
-    # wave-6 row documents for return refs; origin-host containment
-    # surgery like wave 6's own `update-ref -d`; a spec body that is
-    # empty) left brief="" and the attempt DISPATCHED ON AN EMPTY BRIEF —
-    # a real backend leg (a real model session, an opencode run)
-    # on nothing — and then judged whatever the tree happened to do: the
-    # measured falsifier saw the default pytest oracle's cache artifacts
-    # become a diff, get committed, and PUBLISH to main with a green
-    # verdict (fixed:true) for an attempt that never saw its task — the
-    # ba42841 substrate-lie family through a new route. An attempt
-    # without its brief is an ENVIRONMENTAL DEATH BEFORE DISPATCH: no
-    # dispatch, no oracle, no verdict, no return — the claim is archived
-    # under its true att (the sweep law) and the task re-enters
-    # open_tasks when its spec is healthy again. No heir cost (the
-    # clone-failure shape: the attempt died before anything was spent).
+    # The fetch was UNCHECKED. A missing or unreadable spec ref (a
+    # lost-ref transient — the same class documented for return refs,
+    # or origin-host surgery like a plain `update-ref -d`; a spec body
+    # that is empty) left brief="" and the attempt DISPATCHED ON AN
+    # EMPTY BRIEF — a real backend leg (a real model session, an
+    # opencode run) on nothing — and then judged whatever the tree
+    # happened to do: the measured falsifier saw the default pytest
+    # oracle's cache artifacts become a diff, get committed, and
+    # PUBLISH to main with a green verdict (fixed:true) for an attempt
+    # that never saw its task — the substrate-lie family through a new
+    # route. An attempt without its brief is an ENVIRONMENTAL DEATH
+    # BEFORE DISPATCH: no dispatch, no oracle, no verdict, no return —
+    # the claim is archived under its true att (the sweep law) and the
+    # task re-enters open_tasks when its spec is healthy again. No heir
+    # cost (the clone-failure shape: the attempt died before anything
+    # was spent).
     fr = git("-C", tree, "fetch", "-q", origin, f"refs/swarm/specs/{task}")
     if not ok(fr):
         return _env_death_before_dispatch(
@@ -696,12 +694,12 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "spec ref fetched but its brief body is empty — "
             "nothing to dispatch on",
         )
-    # WQ-054 (INT-081 TAKE 1, the schema IS the instruction): a spec the
-    # schema refuses is an environmental death BEFORE dispatch, the
-    # wave-9 empty-spec class finer grained — zero work spent on a seed
-    # no worker can act on, the refusal typed with the missing field's
-    # name, the wave-10 heir gate keeping it from churning forever. A
-    # lone-law copy without the schema sibling skips this entirely.
+    # The schema IS the instruction: a spec the schema refuses is an
+    # environmental death BEFORE dispatch, the empty-spec class finer
+    # grained — zero work spent on a seed no worker can act on, the
+    # refusal typed with the missing field's name, the heir gate
+    # keeping it from churning forever. A lone-law copy without the
+    # schema sibling skips this entirely.
     if refschema is not None:
         schema_errs = refschema.validate_spec(brief)
         if schema_errs:
@@ -718,7 +716,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         None,
     )
     # real work: dispatch the brief to the model (opencode headless —
-    # V4/V6 laws: own git root, $PWD pin). The model + binary are
+    # own git root, $PWD pin). The model + binary are
     # operator-configured via SWARM_MODEL / OPENCODE_BIN.
     oc_rc = 0
     model = os.environ.get("SWARM_MODEL", "zai-org/GLM-5.3-Flash")
@@ -736,10 +734,10 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         oc_rc = oc.returncode
     except subprocess.TimeoutExpired:
         oc_rc = 124
-    # c6 classification, BEFORE any ref is written: an environmental
+    # The classification, BEFORE any ref is written: an environmental
     # death is a dispatch that failed leaving no work in the tree
-    # (124=timeout counts even with partial work — c4 requeued partial
-    # orphan work too). oc_rc!=0 with a populated tree is recorded
+    # (124=timeout counts even with partial work — partial orphan work
+    # was requeued too). oc_rc!=0 with a populated tree is recorded
     # honestly and stays merit-final: the conservative side of the
     # error table (no requeue storms from ambiguous exits).
     no_changes = git("-C", tree, "status", "--porcelain").stdout.strip() == ""
@@ -747,12 +745,12 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     if env_death:
         budget_fresh, gate_err = _heir_gate(task)
         if gate_err is not None:
-            # wave-13: the origin died mid-attempt (the dispatch leg
-            # genuinely ran — oc_rc is real) and the c6 gate is
-            # unevaluatable. The death is RECORDED with the failure
-            # (the claim stays live; reconcile's TTL requeues on heal)
-            # — never the rc-blind lie-0 that silently OPENED the heir
-            # budget, and never a crash into the worker's catch-all.
+            # The origin died mid-attempt (the dispatch leg genuinely
+            # ran — oc_rc is real) and the heir gate is unevaluatable.
+            # The death is RECORDED with the failure (the claim stays
+            # live; reconcile's TTL requeues on heal) — never the
+            # rc-blind lie-0 that silently OPENED the heir budget, and
+            # never a crash into the worker's catch-all.
             return {
                 "event": "attempted",
                 "worker": worker,
@@ -783,15 +781,14 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 ev["sweep_error"] = sweep_err
             return ev
     if env_death:
-        # c6 law, second half (ba42841 lesson, wave-2 2026-09-21): with
-        # the heir budget spent, an environmental death is never a fix
-        # — and never a commit either. This path used to fall through
-        # and publish an empty --allow-empty "fix" to main and point
-        # refs/swarm/tasks at it (measured live: commit ba42841). The
-        # oracle is not run at all here — the dispatch never worked —
-        # so pytest_rc is recorded as a plain 1 (not a pass), never as
-        # a measured result. ONLY the final verdict is written; main
-        # and the tasks ref stay untouched.
+        # The requeue law, second half: with the heir budget spent, an
+        # environmental death is never a fix — and never a commit
+        # either. This path used to fall through and publish an empty
+        # --allow-empty "fix" to main and point refs/swarm/tasks at it
+        # (measured live). The oracle is not run at all here — the
+        # dispatch never worked — so pytest_rc is recorded as a plain 1
+        # (not a pass), never as a measured result. ONLY the final
+        # verdict is written; main and the tasks ref stay untouched.
         et = empty_tree()
         v_sha, v_proc = commit_tree(
             et,
@@ -847,15 +844,14 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # (heir-exhausted path: the oracle may pass on an unchanged tree)
     fixed = pr.returncode == 0 and not env_death
     if not fixed:
-        # c6 law, third clause (wave-3 2026-09-21): a change that FAILS
-        # its oracle is never a fix and never lands. Publishing used to
-        # be unconditional — a merit failure add'ed + committed + pushed
-        # its tree and THEN wrote fixed:false, so main could carry
-        # changes no verdict claims (the inverse of ba42841, the empty
-        # commit found live in wave 2 on the env-death path). Merit
-        # failure is FINAL: main and refs/swarm/tasks stay untouched,
-        # ONLY the honest verdict is written, with the real pytest_rc.
-        # WQ-031 (INT-085): with FLOCKWORK_KEEP_TREE=1 the tree is moved
+        # A change that FAILS its oracle is never a fix and never
+        # lands. Publishing used to be unconditional — a merit failure
+        # add'ed + committed + pushed its tree and THEN wrote
+        # fixed:false, so main could carry changes no verdict claims
+        # (the inverse of the empty commit found live on the env-death
+        # path). Merit failure is FINAL: main and refs/swarm/tasks
+        # stay untouched, ONLY the honest verdict is written, with the
+        # real pytest_rc. With FLOCKWORK_KEEP_TREE=1 the tree is moved
         # to the keep dir BEFORE the verdict so both the event and the
         # verdict body can carry the kept path — the dispatch RAN here
         # (env-death legs all returned above), which is exactly the
@@ -899,21 +895,20 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # workers push main too — on non-FF, rebase onto origin and retry
     # (reached only when the oracle PASSED — the publish is earned)
     git("-C", tree, "add", "-A")
-    # wave-6 (INT-013, 2026-09-29): the oracle may PASS on an unchanged
-    # tree. The rediscovered SETTLED task shape (fixed:true verdict
-    # whose return ref was lost; reconcile's TTL re-lease freed the
-    # claim — the CG correction-cycle law) re-runs with the fix ALREADY
-    # on main, and any oracle-true no-op attempt lands here too. The old
-    # unconditional --allow-empty commit published a NEW empty "fix"
-    # commit to main: the ba42841 substrate-lie class (main claiming a
+    # The oracle may PASS on an unchanged tree. The rediscovered SETTLED
+    # task shape (fixed:true verdict whose return ref was lost;
+    # reconcile's TTL re-lease freed the claim) re-runs with the fix
+    # ALREADY on main, and any oracle-true no-op attempt lands here too.
+    # The old unconditional --allow-empty commit published a NEW empty
+    # "fix" commit to main: the substrate-lie class (main claiming a
     # fix the tree never had) reopened through the re-lease route.
     # Never CREATE a commit in this shape: main already satisfies the
     # task's success criterion, so the return ref is pointed at main's
     # tip and the verdict records the attempt honestly.
-    # Wave-7 (2026-09-29): the tip comes from the attempt's OWN clone
-    # (refs/remotes/origin/main, fetched at clone time — V12: the sha
-    # comes from the worker's own records, never a fresh remote read).
-    # The first cut ls-remote'd main and pushed that sha from the clone,
+    # The tip comes from the attempt's OWN clone
+    # (refs/remotes/origin/main, fetched at clone time — the sha comes
+    # from the worker's own records, never a fresh remote read). The
+    # first cut ls-remote'd main and pushed that sha from the clone,
     # which never fetched it: when main advanced during the attempt (a
     # concurrent rediscoverer), the return push failed (`not our ref`),
     # return_pushed came back false for work that IS on main, and the
@@ -948,15 +943,15 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             r1 = git("-C", tree, "push", "-q", origin, "HEAD:main")
     if not ok(r1):
         # the lane's product is main: a fix that never landed is never
-        # a fix, whatever the oracle says (round-6 f7 saw the collision
-        # live; one rebase retry covers one collision, not two). Requeue
-        # per the c6 machinery — heir bounded — instead of pushing a
-        # fixed:true verdict the substrate contradicts.
+        # a fix, whatever the oracle says (the collision was seen
+        # live; one rebase retry covers one collision, not two).
+        # Requeue (heir bounded) instead of pushing a fixed:true
+        # verdict the substrate contradicts.
         budget_fresh, gate_err = _heir_gate(task)
         if gate_err is not None:
-            # wave-13: the origin died between the dispatch and the
-            # return push — the same honest record (claim stays live
-            # for reconcile's TTL), never a crash with no accounting.
+            # The origin died between the dispatch and the return
+            # push — the same honest record (claim stays live for
+            # reconcile's TTL), never a crash with no accounting.
             return {
                 "event": "attempted",
                 "worker": worker,
@@ -1021,8 +1016,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 f"{src}:refs/swarm/tasks/{task}",
             )
     else:
-        # INT-015 (wave-4 disclosed round-6 path, closed 2026-09-28):
-        # heirs exhausted on a rejected main push → ONLY the final
+        # Heirs exhausted on a rejected main push → ONLY the final
         # honest verdict. The tasks ref is a RETURN: advancing it with
         # content main contradicts beside a fixed:false verdict is the
         # substrate-lie shape the merit-fail and heir-exhausted
@@ -1068,9 +1062,9 @@ def tempfile_tree(task):
 
     # task names are REMOTE DATA (the claim-CAS namespace accepts any
     # legal refname): a name carrying '/' would point mkdtemp under a
-    # nonexistent directory (found live 2026-09-28 — sweep crashed on
-    # exactly that shape, the local twin of the ssh-shell-injection
-    # class). Sanitize to the refname-safe alphabet; collisions are
+    # nonexistent directory (found live — sweep crashed on exactly that
+    # shape, the local twin of the ssh-shell-injection class).
+    # Sanitize to the refname-safe alphabet; collisions are
     # impossible anyway (mkdtemp appends random chars).
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", task)[:64]
     return tempfile.mkdtemp(prefix=f"inrepo-{safe}-")
@@ -1123,8 +1117,8 @@ def worker(name: str, only: list | None = None) -> bool:
             break
         task = tasks[0]
         # law-freshness gate: judge with the substrate's law or not at
-        # all (round-6 f2/f6, 09-19 — stale law recorded a false
-        # fixed:true; the claim CAS cannot see code versions)
+        # all (a stale law recorded a false fixed:true; the claim CAS
+        # cannot see code versions)
         refused = law_gate(origin, name, task)
         if refused is not None:
             print(json.dumps(refused), flush=True)
@@ -1202,19 +1196,19 @@ def worker(name: str, only: list | None = None) -> bool:
 
 
 def require_remote(origin: str) -> dict:
-    """ls-remote with the rc CHECKED (wave 11, INT-013, 2026-09-29).
-    An unreachable origin RAISES — 'queue empty' and 'cannot see the
-    queue' must not look alike (open_tasks' law, 2026-09-20, extended
-    to every automation read). Pre-fix, sweep/reconcile/correction_graph
-    /relabel_orphan_archives parsed stdout without the rc: a dead origin
-    yielded an empty dict and each returned a SUCCESS-SHAPED EMPTY
-    result — sweep a silent no-op, reconcile a clean empty census,
-    correction_graph an empty graph (decision-grade: the INT-032 frozen
-    rule reads 'FALSIFIED iff all chains single-vertex', so a network
-    blip during the two-model window would have graded the substrate
-    falsified), relabel a quiet no-op. Callers that genuinely tolerate
-    an absent origin call git() directly and classify the failure
-    themselves (origin_body's degraded-read law)."""
+    """ls-remote with the rc CHECKED. An unreachable origin RAISES —
+    'queue empty' and 'cannot see the queue' must not look alike
+    (open_tasks' law, extended to every automation read). Pre-fix,
+    sweep/reconcile/correction_graph /relabel_orphan_archives parsed
+    stdout without the rc: a dead origin yielded an empty dict and each
+    returned a SUCCESS-SHAPED EMPTY result — sweep a silent no-op,
+    reconcile a clean empty census, correction_graph an empty graph
+    (decision-grade: the frozen rule reads 'FALSIFIED iff all chains
+    single-vertex', so a network blip during the two-model window would
+    have graded the substrate falsified), relabel a quiet no-op.
+    Callers that genuinely tolerate an absent origin call git() directly
+    and classify the failure themselves (origin_body's degraded-read
+    law)."""
     r = git("ls-remote", origin)
     if not ok(r):
         raise RuntimeError(
@@ -1231,10 +1225,10 @@ def require_remote(origin: str) -> dict:
 def sweep(origin: str, task: str, att: str | None = None) -> dict:
     """Archive every live refs/swarm/{claims,tasks,verdicts}/<task> to
     refs/swarm/archive/<kind>/<task>@<att> and delete the live refs in
-    ONE transaction (push --atomic; L3/c8 @-law). att defaults to the
-    claim commit body's last token. Idempotent: nothing live -> empty
-    lists, no refs written. Raises RuntimeError on an unreachable
-    origin — never a success-shaped empty result (wave 11)."""
+    ONE transaction (push --atomic; the L3 @-marker archive law).
+    att defaults to the claim commit body's last token. Idempotent:
+    nothing live -> empty lists, no refs written. Raises RuntimeError
+    on an unreachable origin — never a success-shaped empty result."""
     have = require_remote(origin)
     live = [
         (kind, ref, have[ref])
@@ -1245,15 +1239,14 @@ def sweep(origin: str, task: str, att: str | None = None) -> dict:
     if not live:
         return {"task": task, "att": att, "archived": [], "deleted": []}
     if att is None:
-        # audit finding 4 revision: an archive marker must embed the
-        # true att. When the claim IS live the att is recoverable in
-        # principle — read it, retry once for a transient origin-host
-        # read failure, and REFUSE to archive under a degraded marker
-        # (the same push would delete the refs that carry it). Only the
-        # genuinely claim-less orphan shape keeps @unknown: refusing
-        # there would leave zombie refs blocking the task forever
-        # (round-6 finding 5), and relabel_orphan_archives can repair
-        # the marker later if the att ever surfaces.
+        # An archive marker must embed the true att. When the claim IS
+        # live the att is recoverable in principle — read it, retry once
+        # for a transient origin-host read failure, and REFUSE to
+        # archive under a degraded marker (the same push would delete the
+        # refs that carry it). Only the genuinely claim-less orphan
+        # shape keeps @unknown: refusing there would leave zombie refs
+        # blocking the task forever, and relabel_orphan_archives can
+        # repair the marker later if the att ever surfaces.
         cref = f"refs/swarm/claims/{task}"
         att = "unknown"
         if cref in have:
@@ -1294,7 +1287,7 @@ def sweep(origin: str, task: str, att: str | None = None) -> dict:
             raise RuntimeError(f"sweep push failed: {r.stderr.strip()[:300]}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    # INT-085a metrics (observe-only): an eviction is what just happened
+    # metrics (observe-only): an eviction is what just happened
     # (archived dead attempts + freed live refs), recorded post-transaction.
     if metrics.enabled():
         metrics.emit("eviction", task=task, att=att,
@@ -1313,7 +1306,7 @@ def sweep(origin: str, task: str, att: str | None = None) -> dict:
 def reconcile(origin: str, ttl_s: float | None = None) -> dict:
     """Detect and recover stale claims: the automation layer over sweep().
 
-    The dogfood batch recovered six environmental deaths by MANUAL sweep;
+    Early on, six environmental deaths were recovered by manual sweep;
     this closes that gap. A task with a live claim whose return+verdict
     are not both live is INCOMPLETE; if its claim commit is older than
     ttl_s (lease expiry — must exceed the worst-case dispatch+verify
@@ -1355,14 +1348,14 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
         if has_t and has_v:
             out["healthy"].append(t)
             continue
-        # wave-14 (INT-013, 2026-09-29): the claim is board-visible
-        # (the require_remote census listed it), so a failed object read
-        # is a broken board, never "undateable". The strict read raises
-        # and the failure lands in `errors` (retry-able — the next
-        # healthy reconcile sweeps) instead of `anomalies` (the
-        # permanent misclassification that silenced the lane's only TTL
-        # backstop while reads failed). A genuinely malformed object
-        # (read succeeds, no committer line) stays the honest anomaly.
+        # The claim is board-visible (the require_remote census listed
+        # it), so a failed object read is a broken board, never
+        # "undateable". The strict read raises and the failure lands in
+        # `errors` (retry-able — the next healthy reconcile sweeps)
+        # instead of `anomalies` (the permanent misclassification that
+        # silenced the lane's only TTL backstop while reads failed). A
+        # genuinely malformed object (read succeeds, no committer line)
+        # stays the honest anomaly.
         try:
             ts = _committer_ts_from_raw(
                 _origin_raw_strict(origin, f"refs/swarm/claims/{t}")
@@ -1411,9 +1404,9 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
 
 
 def divergence(origin: str | None = None, cwd=None) -> dict:
-    """Node-vs-substrate law (09-19 finding 2): a node that commits to
-    its local main while the substrate moved elsewhere is invisible
-    until someone compares — one node ran 8 local commits ahead unnoticed.
+    """Node-vs-substrate law: a node that commits to its local main
+    while the substrate moved elsewhere is invisible until someone
+    compares — one node ran 8 local commits ahead unnoticed.
     Read-only comparison: local main vs origin main by sha (ls-remote,
     never a fetch). ahead/behind are exact via rev-list when the
     objects are local; otherwise None + a reason that names the fetch —
@@ -1466,13 +1459,12 @@ LAW_PATH = "l2/inrepo.py"
 def law_check(origin: str) -> dict:
     """Is the RUNNING lane law the law the origin publishes?
 
-    Workers have repeatedly judged with stale law (round-6 f2: a stale
-    scp-dropped copy; round-6 f6: a node with no git remote; 09-19: a
-    stale substrate — the receipt was a false fixed:true on an
-    environmental death). The claim CAS cannot see code versions, so
-    the check compares the running module file's blob sha against
-    origin main's published copy, read on the ORIGIN host (the node's
-    object store may not hold origin main — the T5 law).
+    Workers have repeatedly judged with stale law (a stale scp-dropped
+    copy; a node with no git remote; a stale substrate — the receipt
+    was a false fixed:true on an environmental death). The claim CAS
+    cannot see code versions, so the check compares the running module
+    file's blob sha against origin main's published copy, read on the
+    ORIGIN host (the node's object store may not hold origin main).
 
     status:
       match  — identical bytes, claim allowed
@@ -1564,7 +1556,7 @@ def relabel_orphan_archives(origin: str) -> dict:
     push per ref. Never overwrites an existing target and never guesses
     — a ref with no att-* token in its body is skipped and flagged, so
     a dry-minded caller can rerun relabel after fixing the bodies. An
-    unreachable origin raises (wave 11) — never a quiet no-op."""
+    unreachable origin raises — never a quiet no-op."""
     have = require_remote(origin)
     out = {"origin": origin, "relabeled": [], "skipped": [], "errors": []}
     for ref, sha in sorted(have.items()):
@@ -1619,12 +1611,12 @@ def ssh_target(origin: str):
     git plumbing accepts both `ssh://[user@]host[:port]/path` and the
     scp-form `[user@]host:path` — but origin-host body reads build an
     ssh COMMAND from the URL, and only knowing ssh:// meant the
-    documented scp-form (`SWARM_ORIGIN=board-host:solve-metrics-origin.git`,
-    the 09-19 addendum's claim line) fell through to the local-path
-    branch and crashed every origin_body/origin_commit_ts read with
-    FileNotFoundError (cwd = the literal URL string). scp-form paths
-    stay verbatim after the colon: relative to the remote HOME, where
-    the non-interactive ssh shell starts."""
+    documented scp-form
+    (`SWARM_ORIGIN=board-host:solve-metrics-origin.git`) fell through to
+    the local-path branch and crashed every origin_body/origin_commit_ts
+    read with FileNotFoundError (cwd = the literal URL string). scp-form
+    paths stay verbatim after the colon: relative to the remote HOME,
+    where the non-interactive ssh shell starts."""
     if origin.startswith("ssh://"):
         u = urlparse(origin)
         host = u.hostname
@@ -1646,7 +1638,7 @@ def ssh_target(origin: str):
 
 def _origin_raw_proc(origin: str, ref_or_sha: str):
     """The `cat-file -p` read behind origin_raw, as the raw proc so the
-    rc survives (wave 14: the degraded wrapper discards it)."""
+    rc survives (the degraded wrapper discards it)."""
     origin = resolve_origin(origin)
     tgt = ssh_target(origin)
     if tgt is not None:
@@ -1662,16 +1654,16 @@ def _origin_raw_proc(origin: str, ref_or_sha: str):
 
 def origin_raw(origin: str, ref_or_sha: str) -> str:
     """Full `cat-file -p` output of an object, read on the ORIGIN host
-    (T5 law: the auditor's clone may lack freshly pushed objects).
+    (the auditor's clone may lack freshly pushed objects).
 
     Degraded-read law (frozen, test_inrepo_origin_body): anything
     unreadable — absent ref, failed read — returns "". Callers that
     have ALREADY established board visibility (the ref is in a
     require_remote census) and judge on the result use the strict
-    reads (wave 14, _origin_raw_strict/_origin_body_strict): for a
-    board-visible object, "" from a failed read is a lie at every
-    decision-grade consumer (correction_graph's INT-032 frozen rule,
-    audit's H1, reconcile's TTL dating)."""
+    reads (_origin_raw_strict/_origin_body_strict): for a board-visible
+    object, "" from a failed read is a lie at every decision-grade
+    consumer (correction_graph's frozen rule, audit's H1, reconcile's
+    TTL dating)."""
     if not ref_or_sha:
         return ""
     r = _origin_raw_proc(resolve_origin(origin),
@@ -1680,7 +1672,7 @@ def origin_raw(origin: str, ref_or_sha: str) -> str:
 
 
 def _origin_raw_strict(origin: str, ref_or_sha: str) -> str:
-    """Object read with the rc ENFORCED (wave 14, INT-013, 2026-09-29).
+    """Object read with the rc ENFORCED.
     Raises RuntimeError naming the failed read instead of returning
     "" — for a board-visible ref an unreadable object is a broken
     board, never an empty body. Callers pass refs they have already
@@ -1735,19 +1727,19 @@ def origin_commit_ts(origin: str, ref_or_sha: str) -> float | None:
     None when the object is missing/undateable — callers must treat
     None as 'cannot judge age', never as 'old'. (A failed read also
     lands here as None — degraded; reconcile's dating read uses the
-    strict path and records the failure instead, wave 14.)"""
+    strict path and records the failure instead.)"""
     return _committer_ts_from_raw(origin_raw(origin, ref_or_sha))
 
 
 def audit(only: list | None = None) -> None:
     current_origin = resolve_origin()
-    # wave-13 (INT-013, 2026-09-29): the board read is rc-CHECKED — the
-    # UNCHECKED remote() let a dead origin yield an empty have → empty A
-    # → h1_pass true. Wave 12 had just made an empty board read HEALTHY
-    # (correctly, for a reachable idle board), so composed the two made
-    # audit the worst instrument on the wall: blind → empty → healthy.
-    # The operator's primary health instrument never certifies a board
-    # it cannot see (the wave-11 law, applied to the instrument itself).
+    # The board read is rc-CHECKED — the UNCHECKED remote() let a dead
+    # origin yield an empty have → empty A → h1_pass true. An empty
+    # board read is now HEALTHY (correctly, for a reachable idle board),
+    # so composed the two made audit the worst instrument on the wall:
+    # blind → empty → healthy. The operator's primary health instrument
+    # never certifies a board it cannot see (the same law, applied to
+    # the instrument itself).
     have = require_remote(current_origin)
 
     tasks = only or sorted(
@@ -1757,13 +1749,13 @@ def audit(only: list | None = None) -> None:
     for t in tasks:
         c_ref = f"refs/swarm/claims/{t}"
         v_ref = f"refs/swarm/verdicts/{t}"
-        # wave-14 (INT-013, 2026-09-29): board-visible object reads are
-        # STRICT. Degraded, a failed verdict read graded a HEALTHY
-        # claimed task VIOLATED (vbody="" → verdict None — the wave-12
-        # inverse) and a failed claim read crashed IndexError on the
-        # att extraction — the instrument condemned (or crashed on) a
-        # board it could not see. The wave-13 law covers the instrument:
-        # audit never judges, either way, on a read it does not know.
+        # Board-visible object reads are STRICT. Degraded, a failed
+        # verdict read graded a HEALTHY claimed task VIOLATED (vbody=""
+        # → verdict None) and a failed claim read crashed IndexError on
+        # the att extraction — the instrument condemned (or crashed on)
+        # a board it could not see. The rc-checked-read law covers the
+        # instrument: audit never judges, either way, on a read it does
+        # not know.
         try:
             att_c = (
                 _origin_body_strict(current_origin, c_ref).strip().split()[-1]
@@ -1790,23 +1782,23 @@ def audit(only: list | None = None) -> None:
             "verdict": vd.get("fixed"),
             "verdict_att": vd.get("attempt"),
         }
-        # WQ-032 (INT-085): the verdict-count gate's flip is visible
-        # when it exists — integrated: true + the flip sha. Absence
-        # writes NOTHING: visibility, never a new failure class (h1
-        # and the orphan census are untouched by this field).
+        # The verdict-count gate's flip is visible when it exists —
+        # integrated: true + the flip sha. Absence writes NOTHING:
+        # visibility, never a new failure class (h1 and the orphan
+        # census are untouched by this field).
         int_ref = f"refs/swarm/integrated/{t}"
         if int_ref in have:
             A[t]["integrated"] = True
             A[t]["integrated_sha"] = have[int_ref]
     # H1: every CLAIMED task has return+verdict with matching att.
-    # wave-12 (INT-013, 2026-09-29): judged over LIVE CLAIMS, never over
-    # pending work. The old quantification ran `all(...)` over ALL spec
-    # tasks with an empty-board fallback of False, so any task with no
-    # live claim yet — an idle board, or a settled one awaiting its next
-    # re-seed — read h1_pass FALSE: a board where nothing is wrong reads
-    # VIOLATED, the inverse of the 09-20 law that 'queue empty' and
-    # 'cannot see the queue' must not look alike. A task with no live
-    # claim is PENDING, not violating; an empty board is HEALTHY.
+    # Judged over LIVE CLAIMS, never over pending work. The old
+    # quantification ran `all(...)` over ALL spec tasks with an
+    # empty-board fallback of False, so any task with no live claim yet
+    # — an idle board, or a settled one awaiting its next re-seed —
+    # read h1_pass FALSE: a board where nothing is wrong reads
+    # VIOLATED, the inverse of the law that 'queue empty' and 'cannot
+    # see the queue' must not look alike. A task with no live claim is
+    # PENDING, not violating; an empty board is HEALTHY.
     h1 = (
         all(
             d["returned"]
@@ -1818,11 +1810,12 @@ def audit(only: list | None = None) -> None:
         if A
         else True
     )
-    # claim-orphan observability (2026-09-21): the claim-CAS namespace
-    # accepts any ref name, so a claim for a spec-less task can land via
-    # an env-bind slip and sit invisible here (audit is spec-keyed).
-    # REPORT-ONLY: h1 stays the per-spec invariant; reconcile remains the
-    # TTL backstop, sweep the repair (marker carries the claim's true att).
+    # Claim-orphan observability: the claim-CAS namespace accepts any
+    # ref name, so a claim for a spec-less task can land via an
+    # env-bind slip and sit invisible here (audit is spec-keyed).
+    # REPORT-ONLY: h1 stays the per-spec invariant; reconcile remains
+    # the TTL backstop, sweep the repair (marker carries the claim's
+    # true att).
     spec_tasks = {
         t[len("refs/swarm/specs/") :]
         for t in have
@@ -1835,13 +1828,13 @@ def audit(only: list | None = None) -> None:
         and "@" not in r
         and r[len("refs/swarm/claims/") :] not in spec_tasks
     )
-    # WQ-054 (INT-081 TAKE 1, the schema IS the instruction): the
-    # schema-refusal census — how many of the board's acting refs (task
-    # specs, reviewer verdicts) fail l2/refschema.py, each refusal named.
-    # Observe-only: a count, never a new failure class (h1 and the
-    # orphan census are untouched by it; absence of the section means a
-    # lone-law copy staged without the schema sibling, not a clean
-    # board — a clean board with the law present reads measured zeros).
+    # The schema IS the instruction: the schema-refusal census — how
+    # many of the board's acting refs (task specs, reviewer verdicts)
+    # fail l2/refschema.py, each refusal named. Observe-only: a count,
+    # never a new failure class (h1 and the orphan census are untouched
+    # by it; absence of the section means a lone-law copy staged without
+    # the schema sibling, not a clean board — a clean board with the law
+    # present reads measured zeros).
     schema_census = None
     if refschema is not None:
         spec_refusals, rv_refusals = [], []
@@ -1887,7 +1880,7 @@ def audit(only: list | None = None) -> None:
 
 def mm_model_of(att: str) -> str | None:
     """Model identity from an att token alone, per the correction-graph
-    label grammar (INT-016): worker labels declare mm-<model>-<role>, so
+    label grammar: worker labels declare mm-<model>-<role>, so
     att-mm-<model>-<role>-<hex6> attributes the attempt to <model>. The
     model token is '-'-free (dots/underscores only) and the hex6 suffix
     is fixed-width, so the split is unambiguous: the model is the FIRST
@@ -1918,14 +1911,14 @@ def correction_graph(origin: str) -> dict:
     with it). Vertices are a task's attempts:
     every archived claim (@att refs, L3), the live claim, and — when a
     verdict exists — the verdict's attempt. Edges are 'corrects' links
-    between consecutive attempts ordered by claim-commit time (the c6
+    between consecutive attempts ordered by claim-commit time (the
     heir/reconcile law creates them; nothing here writes refs). Model
     attribution comes from mm_model_of on the att token: refs + commit
     objects must carry the whole story — no ledger, no env, no log.
 
     Read-only: ls-remote + origin object reads, never a ref write. An
-    unreachable origin raises (wave 11) — an empty graph must mean an
-    empty substrate, never a dead connection."""
+    unreachable origin raises — an empty graph must mean an empty
+    substrate, never a dead connection."""
     have = require_remote(origin)
     tasks = sorted(
         r[len("refs/swarm/specs/") :]
@@ -1937,15 +1930,15 @@ def correction_graph(origin: str) -> dict:
         v_att = None
         vref = f"refs/swarm/verdicts/{t}"
         if vref in have:
-            # wave-14 (INT-013, 2026-09-29): strict reads — the verdict
-            # ref is board-visible, so a failed object read is a broken
-            # board, never "no attempt line". The DEGRADED read turned a
-            # read blip into a success-shaped INCOMPLETE graph: the
-            # verdict vertex (and its 'final' flag) silently dropped,
-            # and under the INT-032 frozen rule ("FALSIFIED iff all
-            # chains single-vertex") the two-model window could grade
-            # the substrate falsified on a dead read. The blind graph
-            # must not exist (the wave-11 law, one layer down).
+            # Strict reads — the verdict ref is board-visible, so a
+            # failed object read is a broken board, never "no attempt
+            # line". The DEGRADED read turned a read blip into a
+            # success-shaped INCOMPLETE graph: the verdict vertex (and
+            # its 'final' flag) silently dropped, and under the frozen
+            # rule ("FALSIFIED iff all chains single-vertex") the
+            # two-model window could grade the substrate falsified on a
+            # dead read. The blind graph must not exist (the same law,
+            # one layer down).
             vraw = _origin_body_strict(origin, vref)
             for ln in vraw.splitlines():
                 k, _, val = ln.partition(":")
@@ -1958,7 +1951,7 @@ def correction_graph(origin: str) -> dict:
         ]
         cref = f"refs/swarm/claims/{t}"
         if cref in have:
-            # wave-14: strict read (board-visible ref) — same law.
+            # Strict read (board-visible ref) — same law.
             cand = _origin_body_strict(origin, cref).strip().split()
             if cand and cand[-1].startswith("att-"):
                 raw.append((cand[-1], cref))
@@ -1969,10 +1962,10 @@ def correction_graph(origin: str) -> dict:
             attempts.append(
                 {
                     "att": att,
-                    # wave-14: strict dating — an undateable ATTEMPT
-                    # sorts last, deterministically by att (the honest
-                    # degraded read for a malformed object); a FAILED
-                    # read raises like every other object read here.
+                    # Strict dating — an undateable ATTEMPT sorts last,
+                    # deterministically by att (the honest degraded
+                    # read for a malformed object); a FAILED read raises
+                    # like every other object read here.
                     "ts": _committer_ts_from_raw(
                         _origin_raw_strict(origin, ref)
                     ),
@@ -2003,10 +1996,10 @@ def correction_graph(origin: str) -> dict:
 
 
 # ------------------------------------------------ verdict-count gate CLI
-# WQ-032 (INT-085): the pilot's gate module (l2/gates.py) becomes
-# reachable through the law's single CLI surface. THIN delegation only —
-# the module owns the semantics (docs/GATES.md, pinned by its own
-# suite); the law adds no second implementation to drift.
+# The gate module (l2/gates.py) becomes reachable through the law's
+# single CLI surface. THIN delegation only — the module owns the
+# semantics (docs/GATES.md, pinned by its own suite); the law adds no
+# second implementation to drift.
 
 
 def review_cmd(task: str, reviewer: str, outcome: str,

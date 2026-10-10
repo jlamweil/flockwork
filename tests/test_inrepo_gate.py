@@ -1,6 +1,6 @@
-"""Contract for the gate verbs in the lane law (WQ-032, INT-085).
+"""Contract for the gate verbs in the lane law.
 
-WQ-025's pilot landed the verdict-count gate as a STANDALONE module
+The verdict-count gate landed as a STANDALONE module
 (l2/gates.py, its own suite) — deliberately unwired, because the lane
 law cannot move under live workers. This suite pins the integration:
 the law stays the single CLI surface (python3 l2/inrepo.py review|gate)
@@ -9,7 +9,7 @@ implementation to drift — and audit() gains integrated-ref visibility
 without a new failure class. The lone-law story holds: an inrepo.py
 staged without l2/ still boots; the gate verb refuses honestly there,
 because unlike metrics (observe-only) a gate run mutates the board and
-must never fake a success-shaped no-op (wave-11 law).
+must never fake a success-shaped no-op.
 """
 import importlib.util
 import json
@@ -48,7 +48,7 @@ def _ok(r):
 
 
 def _origin(tmp_path):
-    """Scratch bare origin with one commit on main (the house T5 shape)."""
+    """Scratch bare origin with one commit on main."""
     o = tmp_path / "origin.git"
     _git("init", "-q", "--bare", str(o))
     _git("-C", str(o), "symbolic-ref", "HEAD", "refs/heads/main")

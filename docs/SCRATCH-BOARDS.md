@@ -2,8 +2,8 @@
 
 You are building a **board** — a bare origin that workers (human-operated
 seats or dispatched models) will clone to do tasks. This page is the
-authoring law. It exists because two real boards (WQ-052's gate corpus,
-WQ-056's recovery board) were built with the broken construction below
+authoring law. It exists because two real boards (a gate corpus, a
+recovery board) were built with the broken construction below
 and every clone they served checked out NOTHING — the tasks still got
 done, but through an unplanned channel the briefs never promised
 (evidence at the bottom). The law is three lines; the smoke test is the
@@ -29,7 +29,7 @@ gate that makes the third one non-optional.
    claim are "already checked out". Exit code is the gate — no worker
    starts while it is red.
 
-## The smoke test (copy-paste; proven 2026-10-02, WQ-062)
+## The smoke test (copy-paste; proven live)
 
 ```bash
 smoke() { # $1 = origin path, $2 = a file the briefs assume present; rc 0 = board lawful
@@ -58,8 +58,7 @@ Run `smoke` against ONE file per task family your board serves.)
 
 ## What the trap looks like live
 
-Same seed content, both boards built 2026-10-02 under `/tmp/wq062-demo/`
-(transcript in the WQ-062 receipt):
+Same seed content, both boards built under a scratch demo dir:
 
 | | trap board (`init --bare` + push main) | lawful board (+ `symbolic-ref HEAD`) |
 |---|---|---|
@@ -76,7 +75,7 @@ Same seed content, both boards built 2026-10-02 under `/tmp/wq062-demo/`
 | `init --bare` + push `main` only | `refs/heads/master`, unborn | **BROKEN — the trap** |
 | `init --bare --initial-branch=main` + push `main` | resolves at `main` | OK |
 | `init --bare` + `symbolic-ref HEAD refs/heads/main` + push `main` | resolves at `main` | OK |
-| clone an existing checkout, push from it (WQ-035 pilot3, WQ-032 origin2 style) | inherited, resolves | OK |
+| clone an existing checkout, push from it | inherited, resolves | OK |
 | `init --bare` + push the default branch name instead | resolves at `master` | OK, but off the fleet's `main` convention — don't |
 
 ## Why the law is docs, not lane code
@@ -93,24 +92,24 @@ No lane change is intended by this page.
 You are cloned into a board and the worktree is empty while your brief
 says files are "already checked out": `git rev-parse --abbrev-ref HEAD`
 answers `HEAD` (unborn). **Stop and surface it** — do not improvise
-plumbing reads (`git show origin/main:path`) to fake a checkout. The
-2026-10-02 boards show work continues that way and can even land
+plumbing reads (`git show origin/main:path`) to fake a checkout. Those
+boards show work continues that way and can even land
 correct-looking output, but the brief's premise is false and a
 self-contained `verify:` oracle can pass source-blind. Report the board,
 let the operator re-law it.
 
-## Evidence (first-hand, 2026-10-02)
+## Evidence (first-hand)
 
-- WQ-056 receipt (driver checkout, `runs/2026-10-02/workqueue/WQ-056/`):
-  instrument finding F1 — both WQ-052 and WQ-056 boards had unborn HEAD;
+- Recovery-board receipt (driver checkout):
+  instrument finding F1 — both boards had unborn HEAD;
   every worker/reviewer clone checked out nothing; the dispatch models
   read task content via git plumbing (proof: the `localhost:8080` fact
   appears in both worker docs but existed only in `docs/T1-SOURCE.md`,
   absent from every worktree).
-- WQ-052 receipt addendum: the 24 reviewer clones were also
+- Gate-corpus receipt: the 24 reviewer clones were also
   checkout-less; the 12/12 unanimous defect detection is itself the
   proof the models found the content another way.
-- WQ-062 (this law): trap re-verified on the kept boards
-  (`/tmp/wq056-recovery/origin.git` HEAD = `refs/heads/master`, orphan
-  tree `/tmp/inrepo-T1-cyrh7b0r` = 0 tracked files) and re-demonstrated
-  end-to-end on fresh origins (table above).
+- This law: trap re-verified on the kept boards
+  (a kept recovery board's `origin.git` HEAD = `refs/heads/master`,
+  orphan clone tree = 0 tracked files) and re-demonstrated end-to-end
+  on fresh origins (table above).

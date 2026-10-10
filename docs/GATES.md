@@ -1,8 +1,8 @@
-# GATES — the verdict-count gate (INT-081 bridge, INT-085(b) wave A)
+# GATES — the verdict-count gate
 
 Design, now LANDED: `l2/gates.py` implements this document (its own
-suite, tests/test_gates.py, @ bbc8a3e), and since WQ-032 the law's CLI
-is the single surface for it — `python3 l2/inrepo.py review|gate ...`
+suite, tests/test_gates.py), and the law's CLI is the single surface
+for it — `python3 l2/inrepo.py review|gate ...`
 delegates to the module; audit shows `integrated: true` + the flip sha.
 This section's verb sketch below is the design of record for HOW it
 reuses `commit_tree`, `push_sha_ref`, and the create-once CAS shape
@@ -47,10 +47,10 @@ lines.
 
 ```
 review-verdict
-task: INT-081
+task: demo-task
 reviewer: rev-b
 outcome: agree
-evidence: refs/swarm/tasks/INT-081
+evidence: refs/swarm/tasks/demo-task
 ```
 
 | field | check |
@@ -60,8 +60,8 @@ evidence: refs/swarm/tasks/INT-081
 | `outcome:` | exactly `agree` or `veto` (lowercase) |
 | `evidence:` | a git ref the reviewer examined — for a fix review, the return ref `refs/swarm/tasks/<task>` |
 
-Since WQ-054 (INT-081 TAKE 1) these checks are DEFINED in
-`l2/refschema.py` — the schema's definition of record, which also
+These checks are DEFINED in `l2/refschema.py` — the schema's
+definition of record, which also
 carries the spec-side schema (what + `verify:` done-bar, refused at
 claim time). `l2/gates.py` delegates to it and keeps the inline copy
 above as its staged-alone fallback; a refused verdict names its
@@ -125,39 +125,39 @@ safe side is the conservative one.
 
 ## 6. Worked example — 3-of-3 ending in a flip
 
-Task `INT-081`; the spec declares `n: 3`, `m: 3`, reviewers
+Task `demo-task`; the spec declares `n: 3`, `m: 3`, reviewers
 `rev-a rev-b rev-c`. The attempt already landed:
-`refs/swarm/tasks/INT-081` (return) and `refs/swarm/verdicts/INT-081`
+`refs/swarm/tasks/demo-task` (return) and `refs/swarm/verdicts/demo-task`
 (final verdict, `fixed: true`) exist.
 
 | step | ref written | body (`outcome`) | gate state |
 |---|---|---|---|
-| 1 | `refs/swarm/verdicts/INT-081@rev-a` | `agree` | agree=1 < 3 |
-| 2 | `refs/swarm/verdicts/INT-081@rev-b` | `agree` | agree=2 < 3 |
-| 3 | `refs/swarm/verdicts/INT-081@rev-c` | `agree` | agree=3, veto=0 → FIRE |
+| 1 | `refs/swarm/verdicts/demo-task@rev-a` | `agree` | agree=1 < 3 |
+| 2 | `refs/swarm/verdicts/demo-task@rev-b` | `agree` | agree=2 < 3 |
+| 3 | `refs/swarm/verdicts/demo-task@rev-c` | `agree` | agree=3, veto=0 → FIRE |
 
-Full body of step 2's verdict (`refs/swarm/verdicts/INT-081@rev-b`):
+Full body of step 2's verdict (`refs/swarm/verdicts/demo-task@rev-b`):
 
 ```
 review-verdict
-task: INT-081
+task: demo-task
 reviewer: rev-b
 outcome: agree
-evidence: refs/swarm/tasks/INT-081
+evidence: refs/swarm/tasks/demo-task
 ```
 
 Step 3 fires the gate; it writes the flip with this body:
 
 ```
 integrated
-task: INT-081
+task: demo-task
 n: 3
 m: 3
 agreed: rev-a rev-b rev-c
-evidence: refs/swarm/tasks/INT-081
+evidence: refs/swarm/tasks/demo-task
 ```
 
-…pushed create-once to `refs/swarm/integrated/INT-081`. Re-running the
+…pushed create-once to `refs/swarm/integrated/demo-task`. Re-running the
 gate finds the ref live → idempotent no-op.
 
 ## 7. Falsifiable properties (pin each in the suite)

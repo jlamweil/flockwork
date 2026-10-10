@@ -73,10 +73,10 @@ line one.
     and `demo/owner_test.sh` do; never point `SWARM_ORIGIN` at an
     origin you don't own while experimenting.
 
-**There is NO default origin (WQ-093, 2026-10-03).** Every command
+**There is NO default origin.** Every command
 that touches a board needs the board's address: `export
 SWARM_ORIGIN=<board-url>` (or pass the origin explicitly where a verb
-takes one). Before WQ-093 the law silently defaulted to a production
+takes one). Before that the law silently defaulted to a production
 board, and three seats that forgot the env var pushed their
 seed/verdict/spec refs straight into production in two days. Now an
 unset `SWARM_ORIGIN` refuses loudly with a typed error
@@ -98,7 +98,7 @@ the test suite's own pattern) → refuse.
 | `docs/REFS-MODEL.md` | refs-model diagram + the five verbs + honesty laws | you want the model, tightly |
 | `l2/inrepo.py` | the machinery: every verb, ref write, and gate | you change or audit behavior |
 | `tests/` | pytest suite (TDD red→green history in git log) | you touch `l2/` |
-| `l2/metrics.py` | optional JSONL observer + summary judge | you instrument pilots |
+| `l2/metrics.py` | optional JSONL observer + summary judge | you instrument the loop |
 | `docs/GATES.md` | the verdict-count gate (n-of-m review → integration flip) | you add reviewer gating |
 | `docs/SCRATCH-BOARDS.md` | the board-authoring law (origin HEAD must resolve) + smoke test | you build a board workers will clone |
 
@@ -199,5 +199,4 @@ repo internals keep the working name `swarmo`. *the board / origin* —
 the git remote that hosts `refs/swarm/*`; you point at it with
 `SWARM_ORIGIN` (the shipped code has **no** default origin — unset is a
 typed refusal, see the no-default-origin law). *D-INREPO* — the design
-decision that this repo is its own substrate. *WQ-xxx / INT-xxx* — the
-work-queue and intent ids that stamp each git-log entry.
+decision that this repo is its own substrate.

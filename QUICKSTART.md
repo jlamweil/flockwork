@@ -27,7 +27,7 @@ Stepping through it by hand instead — every line is copy-pasteable:
 #    SWARM_ORIGIN is the board's address: EVERY l2/inrepo.py command (and
 #    every worker you launch from this shell) reads it to find the origin.
 #    Forgotten? The command refuses with OriginUnsetError — there is no
-#    default origin (WQ-093).
+#    default origin.
 rm -rf /tmp/swarmo-owner-demo && mkdir -p /tmp/swarmo-owner-demo
 git init -q --bare /tmp/swarmo-owner-demo/origin.git
 git -C /tmp/swarmo-owner-demo/origin.git symbolic-ref HEAD refs/heads/main

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.1
+
+- Public-source hygiene: removed internal development-process references
+  (wave/work-item/integration labels, a commit hash, internal dates) from
+  comments, docstrings, and two user-facing error messages. No behavior or
+  API change — the suite is unchanged.
+
 ## v0.2.0
 
 - **Oracle-leg timeout** (`SWARM_ORACLE_TIMEOUT`, default 600s): the verify
