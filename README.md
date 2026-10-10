@@ -1,0 +1,115 @@
+# flockwork — the swarm that runs like clockwork
+
+**flockwork** is a worker swarm whose **entire coordination substrate is
+git itself**: no server, no database, no queue daemon — a shared origin's
+refs under `refs/swarm/` carry task briefs, claims, returns, and
+verdicts, and every guarantee (exactly-once work, honest outcomes,
+bounded retries) reduces to a git property you can verify with
+`ls-remote` and `cat-file`. This repo doubles as its own substrate
+(**D-INREPO**): the machinery lives in `l2/inrepo.py`, and workers
+coordinate through refs on the project's own origin. (The code, CLI, and
+repo internals keep the working name `swarmo` — same product.)
+
+> **New to swarms, git refs, or both?** `docs/00-ORIENTATION.md` is the
+> zero-context orientation: the project in 15 sentences, how the pieces
+> relate, which doc to open for which job, what a verdict means, and a
+> full glossary.
+
+Run it yourself in five minutes: `QUICKSTART.md` (scratch board, zero
+model spend).
+
+## The refs model (one diagram)
+
+```
+  origin  (any git remote — a bare repo; e.g. a local bare repo under /tmp)
+  ├── refs/heads/main                      the product: landed fixes
+  └── refs/swarm/*                         the coordination lane
+      ├── specs/<task>      the brief      operator seeds it (root commit,
+      │                                    body carries the task + `verify:` line)
+      ├── claims/<task>     the lease      create-once CAS push — exactly one
+      │                                    worker wins; duplicates are rejected
+      ├── tasks/<task>      the return     points at the fix, on main's lineage
+      ├── verdicts/<task>   the outcome    root commit: task/attempt/fixed/host/rc
+      └── archive/<kind>/<task>@<att>      dead attempts, preserved (never deleted)
+```
+
+Claim and verdict commits are ROOT commits, so their objects never
+leak into consumer clones or fetches; the whole lane is evictable with
+a one-transaction namespace delete.
+
+## The five verbs
+
+1. **seed** — the operator declares a task: `python3 l2/inrepo.py seed
+   spec.json` pushes `refs/swarm/specs/<task>` carrying the brief; a
+   `verify:` line in the brief is the task's oracle.
+2. **claim** — a worker leases a task: a create-once CAS push
+   (`push --force-with-lease=<ref>:`) to `refs/swarm/claims/<task>`.
+   Git itself rejects the second claim — exactly-once is not a lock
+   file, it is the ref database.
+3. **work** — the claim winner clones the origin, dispatches the brief
+   to the model, and the `verify:` line (or host pytest) judges the
+   tree. A pass lands the fix on main and points the return ref at it;
+   a fail touches nothing but the verdict.
+4. **verdict** — the attempt closes as a root commit at
+   `refs/swarm/verdicts/<task>`: `fixed: true|false`, host, dispatch
+   and oracle exit codes. The refs alone must separate environmental
+   deaths from honest merit failures.
+5. **evict** — `sweep`/`reconcile` archive dead attempts to
+   `refs/swarm/archive/<kind>/<task>@<att>` and free the live refs in
+   one atomic transaction, so the task re-enters the queue; eviction
+   is bounded (one heir per death, then a final honest `fixed:false`).
+
+## The honesty laws (what keeps the lane truthful)
+
+Claim and verdict commits are ROOT commits so their objects never leak
+into consumer fetches, and eviction is a one-transaction namespace
+delete. Four honesty laws keep the lane truthful. **Claim-loss
+honesty:** a failed claim is classified — a lost race (`! [rejected]
+(stale info)`) is healthy contention to re-scan, a structurally broken
+origin is reported — and bounded by `SWARM_WORKER_MAX_FAILS` so a sick
+host exits instead of spinning. **Law-freshness gate:** each worker
+refuses to claim when its running `l2/inrepo.py` blob differs from
+origin main's published copy, so stale code never writes to the
+substrate. **Environmental honesty:** a dispatch death (timeout, or
+failure with an empty tree) is never recorded as a fix — the attempt is
+archived and requeued to one heir, then closed with a final honest
+`fixed:false`. **Main-push honesty:** a fix is a fix only if its commit
+actually lands on main, else the task requeues under the same bounded
+machinery — and a change that fails its oracle never lands at all: a
+merit failure publishes only its final honest verdict, never to main.
+
+**No-default-origin law:** there is **no** default `SWARM_ORIGIN`. Every
+origin resolution is explicit-arg > `SWARM_ORIGIN` at call time > the
+import-time `ORIGIN` > a typed `OriginUnsetError` naming the fix. A
+write or read leg with no origin anywhere refuses *before* any git/ssh
+contact, so a forgotten config can never push into a production board.
+
+`python3 l2/inrepo.py audit` is the board's health instrument
+(`h1_pass`: every live claim has a matching return + verdict);
+`reconcile` is the TTL backstop for stale claims; `correction-graph`
+reconstructs the multi-model attempt graph from refs alone.
+
+## Observability (opt-in, zero wire change)
+
+- `FLOCKWORK_METRICS=1` turns on a JSONL observer over the lane's own
+  results; `python3 -m l2.metrics [files]` summarizes counts,
+  reject-rate, and claim→verdict latency. `--dora` adds the DORA five
+  over the same stream.
+- `FLOCKWORK_KEEP_TREE=1` preserves a merit-failed attempt's tree so a
+  failure is auditable.
+
+## Layout
+
+```
+l2/inrepo.py      the lane law: seed/claim/work/verdict/evict + review/gate + audit
+l2/metrics.py     the opt-in JSONL observer + DORA judge
+l2/gates.py       the verdict-count gate (n-of-m reviewer agreement)
+l2/refschema.py   minimal required-field schemas; loud typed refusals
+tests/            the suite (hermetic: scratch boards, no network, no default origin)
+demo/             the scripted end-to-end (owner_test.sh) + the raw CAS demo
+docs/             00-ORIENTATION (start here), GATES, SCRATCH-BOARDS
+```
+
+## License
+
+Apache-2.0. See `LICENSE`.
