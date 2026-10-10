@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.3
+
+- Complete source distribution: added `MANIFEST.in` so the sdist ships the
+  full tree — `docs/`, `demo/`, `CHANGELOG.md`, `QUICKSTART.md`, and the CI
+  pipeline — not just the package. `pip install` (the wheel) is unchanged.
+
 ## v0.2.2
 
 - Single name: the product is `flockwork` throughout. The internal working
