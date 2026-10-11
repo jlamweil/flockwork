@@ -49,6 +49,10 @@ else
 fi
 export SWARM_ORIGIN
 SHIM="$REPO/demo/trivial_fixer.sh"
+# v0.3.0's fail-closed model requires SWARM_MODEL to be set; the
+# deterministic shim ignores its value, so a dummy satisfies the seat
+# preflight and keeps the run at zero model spend.
+export SWARM_MODEL=demo-model
 
 step "0. board = $SWARM_ORIGIN"
 if [ "$SCRATCH_OWNED" = 1 ]; then

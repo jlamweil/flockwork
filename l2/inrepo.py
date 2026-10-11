@@ -2595,7 +2595,8 @@ def gate_cmd(task: str) -> int:
     count(agree)==n and count(veto)==0 with every counted verdict's
     evidence ref resolving; the flip is create-once, a re-run after a
     flip is an honest idempotent no-op. Same JSON event as the module's
-    own CLI; rc 0 iff fired or already integrated."""
+    own CLI; rc 0 iff fired or already integrated; rc 2 iff the spec
+    carries no n:/m: (the reviewer-agreement gate is not in use)."""
     if gates is None:
         print(json.dumps(
             {"event": "gate", "task": task, "fired": False,
@@ -2604,30 +2605,57 @@ def gate_cmd(task: str) -> int:
              "reason": "gate module absent (lone-law copy: l2/gates.py "
                        "not staged beside the law)"}), flush=True)
         return 2
-    ev = gates.gate(task)
+    try:
+        ev = gates.gate(task)
+    except RuntimeError as exc:
+        if "carries no n:/m: lines" in str(exc):
+            print(json.dumps(
+                {"event": "gate", "task": task, "fired": False,
+                 "flipped": False, "already_integrated": False,
+                 "not_applicable": True,
+                 "reason": "spec carries no n:/m: lines — this task does "
+                           "not use the reviewer-agreement gate"}),
+                flush=True)
+            return 2
+        raise
     return 0 if (ev["fired"] or ev["already_integrated"]) else 1
 
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "audit"
     if mode == "seed":
+        if len(sys.argv) < 3:
+            print("usage: flockwork seed <spec.json>", file=sys.stderr)
+            sys.exit(2)
         seed(sys.argv[2])
     elif mode == "worker":
+        if len(sys.argv) < 3:
+            print("usage: flockwork worker <name> [args...]",
+                  file=sys.stderr)
+            sys.exit(2)
         sys.exit(1 if worker(sys.argv[2], sys.argv[3:] or None) else 0)
     elif mode == "audit":
         audit(sys.argv[2:] or None)
     elif mode == "sweep":
-        print(json.dumps(
-            sweep(sys.argv[2], sys.argv[3],
-                  sys.argv[4] if len(sys.argv) > 4 else None),
-            indent=1,
-        ))
+        if len(sys.argv) >= 4:
+            res = sweep(sys.argv[2], sys.argv[3],
+                        sys.argv[4] if len(sys.argv) > 4 else None)
+        elif len(sys.argv) == 3:
+            res = sweep(resolve_origin(), sys.argv[2])
+        else:
+            print("usage: flockwork sweep [origin] <task> [att]",
+                  file=sys.stderr)
+            sys.exit(2)
+        print(json.dumps(res, indent=1))
     elif mode == "reconcile":
         origin = (sys.argv[2] if len(sys.argv) > 2
                   else resolve_origin())
         ttl = float(sys.argv[3]) if len(sys.argv) > 3 else None
         print(json.dumps(reconcile(origin, ttl), indent=1))
     elif mode == "relabel":
+        if len(sys.argv) < 3:
+            print("usage: flockwork relabel <origin>", file=sys.stderr)
+            sys.exit(2)
         print(json.dumps(relabel_orphan_archives(sys.argv[2]), indent=1))
     elif mode == "divergence":
         print(json.dumps(

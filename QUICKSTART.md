@@ -47,6 +47,9 @@ python3 l2/inrepo.py open_tasks
 #    the brief's verify: oracle on the result -> land the fix on main ->
 #    write the verdict ref. Loser exits honestly with `worker_done,
 #    completed 0`.
+#    SWARM_MODEL is required (v0.3.0 fail-closed); the shim ignores its
+#    value, so a dummy keeps the demo at zero model spend.
+export SWARM_MODEL=demo-model
 OPENCODE_BIN=$PWD/demo/trivial_fixer.sh python3 l2/inrepo.py worker w1
 OPENCODE_BIN=$PWD/demo/trivial_fixer.sh python3 l2/inrepo.py worker w2
 
@@ -82,12 +85,13 @@ and exited honestly with `worker_done, completed 0`); the winner
 dispatched the brief, passed the task's `verify:` oracle, landed the
 fix on main, and the board recorded a `fixed: true` verdict.
 
-**Real model dispatch:** drop `OPENCODE_BIN=demo/trivial_fixer.sh` and
-set `SWARM_MODEL` — workers then send the brief to opencode headless with
-that model. `SWARM_MODEL` is **required**: the worker refuses to start
-(fail-closed, a typed `model_refusal`) rather than dispatch to a stale
-default. The `demo/trivial_fixer.sh` shim exists only so the demo is
-deterministic and free.
+**Real model dispatch:** replace the dummy `SWARM_MODEL=demo-model` with a
+real model id and drop `OPENCODE_BIN=demo/trivial_fixer.sh` — workers then
+send the brief to opencode headless with that model. `SWARM_MODEL` is
+**required on every dispatch, the shim path included**: the worker refuses
+to start (fail-closed, a typed `model_refusal`) rather than dispatch to a
+stale default. The `demo/trivial_fixer.sh` shim exists only so the demo is
+deterministic and free — it ignores the model value, hence the dummy.
 
 **A real origin instead of the scratch board:** `export SWARM_ORIGIN`
 at any origin git can reach (e.g. an ssh bare on another host) and
