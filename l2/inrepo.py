@@ -259,7 +259,7 @@ def _swarm_model() -> str:
     return os.environ.get("SWARM_MODEL", "").strip()
 
 
-_KNOWN_HARNESSES = ("opencode",)
+_KNOWN_HARNESSES = ("opencode", "freebuff")
 
 
 def _dispatch_harness() -> str:
@@ -386,6 +386,8 @@ def _dispatch(harness: str, model: str, brief: str, tree: str):
             rc, err = oc.returncode, oc.stderr or ""
         except subprocess.TimeoutExpired:
             rc, err = 124, ""
+    elif harness == "freebuff":
+        return _dispatch_freebuff(model, brief, tree, timeout)
     else:  # unreachable: the seat preflight gates the harness value
         raise ValueError(f"unknown dispatch harness: {harness}")
     return rc, round(time.monotonic() - t0, 2), err
@@ -466,6 +468,29 @@ def _dispatch_streaming(model: str, brief: str, tree: str, timeout: int):
     # first event.
     err = (err_events[0] if err_events else "".join(stderr_parts).strip())
     return rc, elapsed, err[-200:]
+
+
+def _dispatch_freebuff(model: str, brief: str, tree: str, timeout: int):
+    """The freebuff dispatch (the swarmo-remote PTY adapter, the proven second
+    harness). A blocking dict call — no stream/progress. The connector is a
+    remote dependency (FBCONN_HOME / yuguerten); it is imported on demand so
+    the default opencode path never needs it, and a test injects a stub via
+    sys.modules. The timeout maps to fbconn's timeout (a timeout -> oc_rc=124);
+    a refusal / no-text reply is an honest env-death (oc_rc=1). Returns
+    (rc, elapsed, err) — the same contract as the other harnesses."""
+    import importlib
+    t0 = time.monotonic()
+    try:
+        fb = importlib.import_module("fbconn.api")
+        res = fb.run_prompt(tree, brief, takeover=True, timeout=timeout)
+        rc = 0 if res and res.get("text") else 1
+        err = (res.get("err") or res.get("error") or "") if res else ""
+    except Exception as e:  # noqa: BLE001 — record, never crash (swarmo law)
+        name = type(e).__name__.lower()
+        msg = str(e).lower()
+        rc = 124 if ("timeout" in name or "timed out" in msg) else 1
+        err = repr(e)[:200]
+    return rc, round(time.monotonic() - t0, 2), err
 
 
 def _push_dispatch_started(origin: str, task: str, att: str,

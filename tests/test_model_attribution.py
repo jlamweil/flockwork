@@ -21,6 +21,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import types
 
 import pytest
 
@@ -853,3 +854,54 @@ def test_reconcile_flags_aging_claim(monkeypatch, tmp_path):
     out = inrepo.reconcile(o, ttl_s=100)
     aging = {x.get("task") for x in out.get("aging", [])}
     assert "T-age" in aging, out  # 75s past, 0.5*100=50 threshold, age<=100
+
+
+# ------------------------------------------------------ L3 freebuff adapter
+
+
+def test_dispatch_freebuff_routes_and_timeout(monkeypatch, tmp_path):
+    """L3 (C8): SWARM_DISPATCH=freebuff routes to fbconn.run_prompt (the
+    swarmo-remote PTY adapter) with takeover + the timeout fed from
+    SWARM_DISPATCH_TIMEOUT. A stub connector (injected via sys.modules, not
+    the ambient host — the connector is a remote dependency, never required
+    for the default opencode path) classifies success (text), env-death (no
+    text), and timeout (oc_rc=124)."""
+    inrepo = _load_inrepo()
+    _git("init", "-q", "-b", "main", str(tmp_path / "w"))
+    calls = {}
+
+    def run_prompt(folder, prompt, *, takeover=False, timeout=600, **kw):
+        calls["timeout"] = timeout
+        calls["takeover"] = takeover
+        if "TIMEOUT" in prompt:
+            raise TimeoutError("timed out")
+        return {"text": "done"} if "OK" in prompt else {}
+
+    api = types.ModuleType("fbconn.api")
+    api.run_prompt = run_prompt
+    mod = types.ModuleType("fbconn")
+    mod.api = api
+    monkeypatch.setitem(sys.modules, "fbconn", mod)
+    monkeypatch.setitem(sys.modules, "fbconn.api", api)
+    monkeypatch.setenv("SWARM_DISPATCH_TIMEOUT", "77")
+    rc, elapsed, err = inrepo._dispatch(
+        "freebuff", "m", "OK brief", str(tmp_path / "w"))
+    assert rc == 0 and elapsed >= 0
+    assert calls["timeout"] == 77 and calls["takeover"] is True
+    assert inrepo._dispatch("freebuff", "m", "FAIL brief",
+                            str(tmp_path / "w"))[0] == 1  # no text -> env death
+    assert inrepo._dispatch("freebuff", "m", "TIMEOUT brief",
+                            str(tmp_path / "w"))[0] == 124  # timeout -> 124
+
+
+def test_freebuff_is_a_known_harness(monkeypatch):
+    """L3 (C8): freebuff is a recognized harness (the preflight does not
+    refuse it) and its model-resolvability degrades (no freebuff listing —
+    proceed, the alias check is opencode-only)."""
+    inrepo = _load_inrepo()
+    assert "freebuff" in inrepo._KNOWN_HARNESSES
+    monkeypatch.setenv("SWARM_MODEL", "fb/model")
+    monkeypatch.setenv("SWARM_DISPATCH", "freebuff")
+    assert inrepo._dispatch_harness() == "freebuff"
+    # the preflight proceeds for freebuff (no alias check, model is set)
+    assert inrepo._model_preflight("wm") is False
