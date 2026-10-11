@@ -2815,6 +2815,79 @@ def gate_cmd(task: str) -> int:
     return 0 if (ev["fired"] or ev["already_integrated"]) else 1
 
 
+def _ref_timeline(origin: str, ref: str) -> dict | None:
+    """The durable state of a ref, reconstructed from the origin: sha, committer
+    ts, age, and the body. None when the ref is absent. (C7 legibility.)"""
+    raw = origin_raw(origin, ref)
+    if not raw:
+        return None
+    body = raw.partition("\n\n")[2] if raw.startswith("tree ") else raw
+    ts = _committer_ts_from_raw(raw)
+    sha = (remote(ref, origin=origin).stdout or "").split()
+    return {
+        "sha": sha[0] if sha else None,
+        "ts": ts,
+        "age_s": round(time.time() - ts, 1) if ts is not None else None,
+        "body": body.rstrip("\n"),
+    }
+
+
+def _claim_checkpoints(origin: str, task: str) -> dict:
+    """The [work]/[dispatch] leg markers stamped on the claim body (the iso
+    timestamps) — the legible timeline of when the work legs began/ended."""
+    raw = origin_raw(origin, f"refs/swarm/claims/{task}")
+    if not raw:
+        return {}
+    body = raw.partition("\n\n")[2] if raw.startswith("tree ") else raw
+    cp = {}
+    for ln in body.split("\n"):
+        for key in ("work_started:", "work_done:", "dispatch_started:"):
+            if ln.strip().startswith(key):
+                cp[key.rstrip(":")] = ln.strip()[len(key):].strip()
+    return cp
+
+
+def _verdict_fields(body: str) -> dict:
+    """The structured fields of a verdict body (fixed/oc_rc/pytest_rc/model/
+    harness/attempt) — the durable source the correction graph + durations
+    read."""
+    d = {}
+    for ln in body.split("\n"):
+        for k in ("fixed:", "oc_rc:", "pytest_rc:", "model:", "harness:",
+                  "attempt:"):
+            if ln.startswith(k):
+                d[k.rstrip(":")] = ln[len(k):].strip()
+    return d
+
+
+def run_timeline(task: str, origin: str | None = None) -> dict:
+    """Reconstruct the full run timeline for a task from the refs alone (the
+    durable board truth — no metrics, no local state): the spec (the brief +
+    verify), the claim (+ its work_started/work_done/dispatch_started
+    checkpoints), the return ref, and the verdict. A human reads this after
+    the fact (C7); a completed run shows the full chain in order, and a
+    crashed/stalled run is legible (work_started present, no verdict). The
+    plugin augments it with the local run-ledger (C12)."""
+    origin = resolve_origin(origin)
+    out: dict = {"task": task}
+    out["spec"] = brief_body(origin, task)
+    claim = _ref_timeline(origin, f"refs/swarm/claims/{task}")
+    out["claim"] = claim
+    out["checkpoints"] = _claim_checkpoints(origin, task)
+    ret = _ref_timeline(origin, f"refs/swarm/tasks/{task}")
+    out["return_ref"] = ret["sha"] if ret else None
+    verdict = _ref_timeline(origin, f"refs/swarm/verdicts/{task}")
+    out["verdict"] = ({**verdict,
+                       "fields": _verdict_fields(verdict["body"])}
+                      if verdict else None)
+    out["archived"] = bool(
+        origin_raw(origin, f"refs/swarm/archive/claims/{task}@"
+                           f"{claim['body'].rstrip().split()[-1]}")
+        if claim else False
+    )
+    return out
+
+
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "audit"
     if mode == "seed":
@@ -2874,6 +2947,13 @@ def main() -> None:
             ),
             indent=1,
         ))
+    elif mode == "debug":
+        if len(sys.argv) < 3:
+            print("usage: flockwork debug <task>", file=sys.stderr)
+            sys.exit(2)
+        origin = (sys.argv[3] if len(sys.argv) > 3
+                  else resolve_origin())
+        print(json.dumps(run_timeline(sys.argv[2], origin), indent=1))
     elif mode == "durations":
         bound = float(sys.argv[3]) if len(sys.argv) > 3 else None
         print(json.dumps(
