@@ -2,6 +2,12 @@
 
 ## v0.3.0
 
+- **Release packaging + public-source hygiene**: a GitHub Actions CI (a
+  test matrix + a build/twine-check job) runs alongside the existing
+  pipeline, and the shipped source, docs, and tests carry no internal
+  hostnames, model ids, or routing details — a clean, host-agnostic public
+  release. No behavior or API change.
+
 - **Model attribution**: the dispatched `SWARM_MODEL` + its honest
   `chain`/`direct` flag are recorded in the claim + verdict ref bodies (the
   durable source, readable for every attempt — archived, live, final), stamped

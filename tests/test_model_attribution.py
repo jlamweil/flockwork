@@ -98,9 +98,9 @@ def _run_work_task(env_extra, task, att, worker="w2"):
 def test_verdict_body_records_model(monkeypatch):
     """The verdict body carries the dispatched model as `model: <model>`."""
     inrepo = _load_inrepo()
-    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.setenv("SWARM_MODEL", "t3/coder-coder")
     body = inrepo.verdict_body("T", "att-w1-abcd12", True, "w1", 0, 0)
-    assert "model: t3/unistra-coder" in body
+    assert "model: t3/coder-coder" in body
     assert "attempt: att-w1-abcd12" in body  # unchanged fields intact
 
 
@@ -110,12 +110,12 @@ def test_claim_body_records_model_before_att(monkeypatch, tmp_path):
     inrepo = _load_inrepo()
     o, w = _lane(tmp_path)
     monkeypatch.setenv("SWARM_ORIGIN", o)
-    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.setenv("SWARM_MODEL", "t3/coder-coder")
     monkeypatch.chdir(w)
     res = inrepo.claim_detail("w1", "T-claim")
     assert res["att"] is not None
     body = _body(o, "refs/swarm/claims/T-claim")
-    assert "model: t3/unistra-coder" in body
+    assert "model: t3/coder-coder" in body
     assert body.strip().split()[-1] == res["att"]  # att is LAST
     lines = body.splitlines()
     model_i = next(i for i, l in enumerate(lines) if l.startswith("model:"))
@@ -142,10 +142,10 @@ def test_att_last_invariant_readers(monkeypatch, tmp_path):
     still recover the att. A future reorder (model after att) breaks both."""
     o, w = _lane(tmp_path)
     monkeypatch.setenv("SWARM_ORIGIN", o)
-    att = "att-mm-unistra-x-deadbeef"
+    att = "att-mm-coder-x-deadbeef"
     _push(o, w, _root_commit(w, "the brief\nverify: true"),
           "refs/swarm/specs/T-inv")
-    _push(o, w, _root_commit(w, f"claim T-inv\nmodel: t3/unistra-coder\n{att}"),
+    _push(o, w, _root_commit(w, f"claim T-inv\nmodel: t3/coder-coder\n{att}"),
           "refs/swarm/claims/T-inv")
     inrepo = _load_inrepo()
     # correction_graph recovers the att from the body
@@ -166,16 +166,16 @@ def test_graph_model_from_body(monkeypatch, tmp_path):
     monkeypatch.setenv("SWARM_ORIGIN", o)
     _push(o, w, _root_commit(w, "the brief\nverify: true"), "refs/swarm/specs/T-g")
     _push(o, w, _root_commit(
-        w, "claim T-g\nmodel: t3/unistra-coder\natt-w1-aaaa01"),
+        w, "claim T-g\nmodel: t3/coder-coder\natt-w1-aaaa01"),
         "refs/swarm/claims/T-g")
     _push(o, w, _root_commit(
         w, "verdict\ntask: T-g\nattempt: att-w1-aaaa01\nfixed: true\n"
-           "host: w1\noc_rc: 0\npytest_rc: 0\nmodel: t3/unistra-coder"),
+           "host: w1\noc_rc: 0\npytest_rc: 0\nmodel: t3/coder-coder"),
         "refs/swarm/verdicts/T-g")
     inrepo = _load_inrepo()
     g = inrepo.correction_graph(o)
     atts = {a["att"]: a["model"] for a in g["tasks"]["T-g"]["attempts"]}
-    assert atts["att-w1-aaaa01"] == "t3/unistra-coder"
+    assert atts["att-w1-aaaa01"] == "t3/coder-coder"
 
 
 def test_graph_mm_att_uses_body_not_split(monkeypatch, tmp_path):
@@ -186,13 +186,13 @@ def test_graph_mm_att_uses_body_not_split(monkeypatch, tmp_path):
     monkeypatch.setenv("SWARM_ORIGIN", o)
     _push(o, w, _root_commit(w, "the brief\nverify: true"), "refs/swarm/specs/T-mm")
     _push(o, w, _root_commit(
-        w, "claim T-mm\nmodel: t3/unistra-coder\natt-mm-unistra-a-deadbeef"),
+        w, "claim T-mm\nmodel: t3/coder-coder\natt-mm-coder-a-deadbeef"),
         "refs/swarm/claims/T-mm")
     inrepo = _load_inrepo()
     g = inrepo.correction_graph(o)
     atts = {a["att"]: a["model"] for a in g["tasks"]["T-mm"]["attempts"]}
-    # body model wins; the split would have yielded "unistra"
-    assert atts["att-mm-unistra-a-deadbeef"] == "t3/unistra-coder"
+    # body model wins; the split would have yielded "coder"
+    assert atts["att-mm-coder-a-deadbeef"] == "t3/coder-coder"
     assert not hasattr(inrepo, "mm_model_of")
 
 
@@ -245,14 +245,14 @@ def _router_server(config, counter):
 def test_kind_chain_from_router(monkeypatch):
     inrepo = _load_inrepo()
     cfg = {"model_list": [
-        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/a"}},
-        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/b"}},
+        {"model_name": "t3/tier-coder", "litellm_params": {"model": "openai/a"}},
+        {"model_name": "t3/tier-coder", "litellm_params": {"model": "openai/b"}},
     ]}
     counter = {}
     srv, url = _router_server(cfg, counter)
     try:
         monkeypatch.setenv("SWARM_ROUTER_URL", url)
-        assert inrepo._model_kind("t3/tier-unistra") == "chain"
+        assert inrepo._model_kind("t3/tier-coder") == "chain"
         assert counter["n"] >= 1
     finally:
         srv.shutdown()
@@ -318,20 +318,20 @@ def test_kind_recorded_in_claim_body(monkeypatch, tmp_path):
     """The claim body carries `kind:` after `model:`, att still last."""
     inrepo = _load_inrepo()
     cfg = {"model_list": [
-        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/a"}},
-        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/b"}},
+        {"model_name": "t3/tier-coder", "litellm_params": {"model": "openai/a"}},
+        {"model_name": "t3/tier-coder", "litellm_params": {"model": "openai/b"}},
     ]}
     counter = {}
     srv, url = _router_server(cfg, counter)
     o, w = _lane(tmp_path)
     try:
         monkeypatch.setenv("SWARM_ORIGIN", o)
-        monkeypatch.setenv("SWARM_MODEL", "t3/tier-unistra")
+        monkeypatch.setenv("SWARM_MODEL", "t3/tier-coder")
         monkeypatch.setenv("SWARM_ROUTER_URL", url)
         monkeypatch.chdir(w)
         res = inrepo.claim_detail("w1", "T-k")
         body = _body(o, "refs/swarm/claims/T-k")
-        assert "model: t3/tier-unistra" in body
+        assert "model: t3/tier-coder" in body
         assert "kind: chain" in body
         assert body.strip().split()[-1] == res["att"]
     finally:
@@ -363,12 +363,12 @@ def test_pre_dispatch_death_carries_model_kind(tmp_path):
     att = "att-w2-nd0001"
     _push(o, w, _root_commit(w, f"claim T-nd {att}"), "refs/swarm/claims/T-nd")
     ev = _run_work_task(
-        dict(SWARM_ORIGIN=o, SWARM_MODEL="t3/unistra-coder",
+        dict(SWARM_ORIGIN=o, SWARM_MODEL="t3/coder-coder",
              SWARM_MODEL_KIND="direct", SWARM_HEIR_MAX="1"),
         "T-nd", att)
     assert ev.get("event") != "driver_exception", ev
     assert ev.get("env_death") is True
-    assert ev["model"] == "t3/unistra-coder"
+    assert ev["model"] == "t3/coder-coder"
     assert ev["kind"] == "direct"
     assert "oc_elapsed" not in ev
 
@@ -385,12 +385,12 @@ def test_dispatch_event_carries_model_kind_oc_elapsed(tmp_path):
     att = "att-w2-ds0001"
     _push(o, w, _root_commit(w, f"claim {TASK} {att}"), f"refs/swarm/claims/{TASK}")
     ev = _run_work_task(
-        dict(SWARM_ORIGIN=o, OPENCODE_BIN=str(stub), SWARM_MODEL="t3/unistra-coder",
+        dict(SWARM_ORIGIN=o, OPENCODE_BIN=str(stub), SWARM_MODEL="t3/coder-coder",
              SWARM_MODEL_KIND="direct", SWARM_HEIR_MAX="1",
              SWARM_DISPATCH_TIMEOUT="30"),
         TASK, att)
     assert ev.get("event") != "driver_exception", ev
-    assert ev["model"] == "t3/unistra-coder"
+    assert ev["model"] == "t3/coder-coder"
     assert ev["kind"] == "direct"
     assert isinstance(ev.get("oc_elapsed"), (int, float)) and ev["oc_elapsed"] >= 0
 
@@ -402,11 +402,11 @@ def test_attribution_output_shape(monkeypatch, tmp_path):
     monkeypatch.setenv("SWARM_ORIGIN", o)
     _push(o, w, _root_commit(w, "the brief\nverify: true"), "refs/swarm/specs/T-a")
     _push(o, w, _root_commit(
-        w, "claim T-a\nmodel: t3/unistra-coder\nkind: direct\natt-w1-aaaa01"),
+        w, "claim T-a\nmodel: t3/coder-coder\nkind: direct\natt-w1-aaaa01"),
         "refs/swarm/claims/T-a")
     _push(o, w, _root_commit(
         w, "verdict\ntask: T-a\nattempt: att-w1-aaaa01\nfixed: true\n"
-           "host: w1\noc_rc: 0\npytest_rc: 0\nmodel: t3/unistra-coder\n"
+           "host: w1\noc_rc: 0\npytest_rc: 0\nmodel: t3/coder-coder\n"
            "kind: direct"),
         "refs/swarm/verdicts/T-a")
     inrepo = _load_inrepo()
@@ -415,7 +415,7 @@ def test_attribution_output_shape(monkeypatch, tmp_path):
     for k in ("att", "model", "kind", "fixed", "oc_rc", "pytest_rc",
               "host", "archived"):
         assert k in row, (k, row)
-    assert row["model"] == "t3/unistra-coder" and row["kind"] == "direct"
+    assert row["model"] == "t3/coder-coder" and row["kind"] == "direct"
     assert row["fixed"] == "true" and row["host"] == "w1"
 
 
@@ -455,8 +455,8 @@ def test_swarm_model_default_is_empty(monkeypatch):
     inrepo = _load_inrepo()
     monkeypatch.delenv("SWARM_MODEL", raising=False)
     assert inrepo._swarm_model() == ""
-    monkeypatch.setenv("SWARM_MODEL", "router/tier-unistra")
-    assert inrepo._swarm_model() == "router/tier-unistra"
+    monkeypatch.setenv("SWARM_MODEL", "router/tier-coder")
+    assert inrepo._swarm_model() == "router/tier-coder"
 
 
 # ------------------------------------------------------- L2 dispatch seam
@@ -514,7 +514,7 @@ def test_harness_stamped_on_bodies_and_event(monkeypatch, tmp_path):
     # claim body: harness present, att still the last token
     o, w = _lane(tmp_path)
     monkeypatch.setenv("SWARM_ORIGIN", o)
-    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.setenv("SWARM_MODEL", "t3/coder-coder")
     monkeypatch.chdir(w)
     res = inrepo.claim_detail("w1", "T-h")
     body = _body(o, "refs/swarm/claims/T-h")
@@ -595,7 +595,7 @@ def test_dispatch_started_push_preserves_att_last(monkeypatch, tmp_path):
     inrepo = _load_inrepo()
     o, w = _lane(tmp_path)
     monkeypatch.setenv("SWARM_ORIGIN", o)
-    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.setenv("SWARM_MODEL", "t3/coder-coder")
     monkeypatch.chdir(w)
     res = inrepo.claim_detail("w1", "T-d")
     att = res["att"]
@@ -616,12 +616,12 @@ def test_dispatch_started_resets_lease_age(monkeypatch, tmp_path):
     inrepo = _load_inrepo()
     o, w = _lane(tmp_path)
     monkeypatch.setenv("SWARM_ORIGIN", o)
-    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.setenv("SWARM_MODEL", "t3/coder-coder")
     monkeypatch.chdir(w)
 
     def _aged_claim(task, att):
         body = (f"claim {task}\nharness: opencode\n"
-                f"model: t3/unistra-coder\nkind: unknown\n{att}")
+                f"model: t3/coder-coder\nkind: unknown\n{att}")
         et = _git("-C", w, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
         sha = subprocess.run(
             ["git", "-C", w, "commit-tree", et, "-m", body],
@@ -655,7 +655,7 @@ def test_lease_invariant_warns_on_misconfig(monkeypatch):
     TTL is warned at start (not refused) — a run swept mid-flight is caught.
     The defaults (600 + 600 + slack < 1800) do not warn."""
     inrepo = _load_inrepo()
-    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.setenv("SWARM_MODEL", "t3/coder-coder")
     monkeypatch.setenv("SWARM_DISPATCH_TIMEOUT", "1000")
     monkeypatch.setenv("SWARM_ORACLE_TIMEOUT", "1000")
     monkeypatch.setenv("SWARM_LEASE_TTL", "1800")
@@ -861,7 +861,7 @@ def test_reconcile_flags_aging_claim(monkeypatch, tmp_path):
 
 def test_dispatch_freebuff_routes_and_timeout(monkeypatch, tmp_path):
     """L3 (C8): SWARM_DISPATCH=freebuff routes to fbconn.run_prompt (the
-    swarmo-remote PTY adapter) with takeover + the timeout fed from
+    freebuff remote PTY adapter) with takeover + the timeout fed from
     SWARM_DISPATCH_TIMEOUT. A stub connector (injected via sys.modules, not
     the ambient host — the connector is a remote dependency, never required
     for the default opencode path) classifies success (text), env-death (no

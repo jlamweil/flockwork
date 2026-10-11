@@ -119,21 +119,21 @@ def test_observe_attempt_forwards_model_kind_and_oc_elapsed(monkeypatch, tmp_pat
     m.observe_attempt({
         "event": "attempted", "task": "T1", "worker": "w1",
         "att": "att-w1-a1", "fixed": True, "oc_rc": 0, "pytest_rc": 0,
-        "oc_elapsed": 12.5, "model": "t3/unistra-coder", "kind": "direct",
+        "oc_elapsed": 12.5, "model": "t3/coder-coder", "kind": "direct",
     })
     # a pre-dispatch death requeue: model + kind, but no oc_elapsed (no dispatch)
     m.observe_attempt({
         "event": "attempted", "task": "T1", "worker": "w1",
         "att": "att-w1-a2", "env_death": True, "requeued": True,
-        "model": "t3/unistra-coder", "kind": "direct",
+        "model": "t3/coder-coder", "kind": "direct",
     })
     evs = _read_jsonl(f)
     verdict = [e for e in evs if e["event"] == "verdict"][0]
     heir = [e for e in evs if e["event"] == "heir"][0]
-    assert verdict["model"] == "t3/unistra-coder"
+    assert verdict["model"] == "t3/coder-coder"
     assert verdict["kind"] == "direct"
     assert verdict["oc_elapsed"] == 12.5
-    assert heir["model"] == "t3/unistra-coder"
+    assert heir["model"] == "t3/coder-coder"
     assert heir["kind"] == "direct"
     assert "oc_elapsed" not in heir  # pre-dispatch: no dispatch wall-clock
 

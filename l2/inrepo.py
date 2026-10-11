@@ -364,7 +364,8 @@ def _dispatch(harness: str, model: str, brief: str, tree: str):
     brief in a scratch work tree. Returns (rc, elapsed, err) — the same
     contract the inlined opencode leg had, so the downstream classification
     (no_changes / env_death / heir) is untouched. opencode is the default;
-    freebuff (the proven swarmo adapter) is added behind this seam. `err` is
+    the freebuff adapter (the proven second harness) is added behind this
+    seam. `err` is
     captured at the source so a timeout (no CompletedProcess) still yields a
     clean empty tail instead of an unbound reference."""
     env = dict(os.environ, PWD=tree, OLDPWD=tree)
@@ -471,9 +472,10 @@ def _dispatch_streaming(model: str, brief: str, tree: str, timeout: int):
 
 
 def _dispatch_freebuff(model: str, brief: str, tree: str, timeout: int):
-    """The freebuff dispatch (the swarmo-remote PTY adapter, the proven second
+    """The freebuff dispatch (the remote PTY adapter, the proven second
     harness). A blocking dict call — no stream/progress. The connector is a
-    remote dependency (FBCONN_HOME / yuguerten); it is imported on demand so
+    remote dependency (the freebuff connector, addressed via FBCONN_HOME); it
+    is imported on demand so
     the default opencode path never needs it, and a test injects a stub via
     sys.modules. The timeout maps to fbconn's timeout (a timeout -> oc_rc=124);
     a refusal / no-text reply is an honest env-death (oc_rc=1). Returns
@@ -496,7 +498,7 @@ def _dispatch_freebuff(model: str, brief: str, tree: str, timeout: int):
             rc = 1
         err = (res.get("err") or res.get("error") or "") if isinstance(
             res, dict) else ""
-    except Exception as e:  # noqa: BLE001 — record, never crash (swarmo law)
+    except Exception as e:  # noqa: BLE001 — record, never crash (flockwork law)
         # a raised timeout (ready-leg) is the same 124; anything else (busy
         # instance, not authenticated, refused takeover) is an env-death.
         name = type(e).__name__.lower()
@@ -571,9 +573,10 @@ def _classify_kind_from_config(cfg, model: str) -> str:
 def _query_router_kind(model: str) -> str:
     """Fetch the router's litellm config and classify the model. Best-effort
     + bounded (2s): any timeout/error -> 'unknown'. SWARM_ROUTER_URL (default
-    the 127.0.0.1:4000 tunnel); an optional SWARM_ROUTER_KEY is sent as a
-    Bearer header. Most worker seats lack the tunnel and degrade to
-    'unknown' fast (connection refused)."""
+    the local litellm router at http://127.0.0.1:4000, litellm's default
+    port); an optional SWARM_ROUTER_KEY is sent as a Bearer header. Most
+    worker hosts lack a local router and degrade to 'unknown' fast
+    (connection refused)."""
     url = os.environ.get("SWARM_ROUTER_URL", "http://127.0.0.1:4000")
     req = urllib.request.Request(url + "/model_info")
     key = os.environ.get("SWARM_ROUTER_KEY", "").strip()
