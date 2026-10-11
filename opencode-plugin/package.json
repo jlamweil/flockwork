@@ -1,0 +1,12 @@
+{
+  "name": "flockwork-opencode",
+  "version": "0.1.0",
+  "description": "opencode plugin: turn a habitual session into a transparent flockwork swarm-substrate run. Marker-only, fail-safe. Shells to the `flockwork` CLI (pip).",
+  "type": "module",
+  "main": "index.ts",
+  "exports": { ".": "./index.ts" },
+  "files": ["index.ts", "lib/flockwork.ts"],
+  "peerDependencies": { "@opencode-ai/plugin": ">=1.0.0", "zod": "*" },
+  "peerDependenciesMeta": { "zod": { "optional": true } },
+  "license": "Apache-2.0"
+}
