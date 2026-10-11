@@ -20,6 +20,14 @@ One command first — the scripted version of everything below
 demo/owner_test.sh                 # add --keep to keep the board for step-through
 ```
 
+That is the **headless worker** path (a `worker` loop claims, dispatches, judges,
+lands). There is a second end-to-end proof for the **interactive / external-work**
+path — the `fw_*` legs the opencode plugin and MCP server drive — on the same
+scratch-board model, asserting board-truthful + exactly-once + a legible bounded
+crash: `demo/external_work_e2e.sh`. To drive it from your own coding agent
+(opencode / codex / claude) instead of typing the legs: `docs/HARNESS.md`
+(and `demo/wire_board.sh <project>` to wire a real project in one step).
+
 Stepping through it by hand instead — every line is copy-pasteable:
 
 ```bash
@@ -123,6 +131,10 @@ repeat steps 2–8. The scripted version accepts
    from the verdict refs (works with the metrics layer off), flagging a
    near-bound model that risks a timeout.
  
- What each ref means: `docs/REFS-MODEL.md`.
+  What each ref means: `docs/REFS-MODEL.md`.
 Never seen any of this and want the full narrative + glossary first:
 `docs/00-ORIENTATION.md`.
+**Drive it from your coding agent (opencode / codex / claude)** instead of the
+headless worker: `docs/HARNESS.md` — wire a project with `demo/wire_board.sh`,
+open it in the harness, and run the `fw_*` protocol (marker-only activation,
+honest verdicts, replayable harness + model attribution).

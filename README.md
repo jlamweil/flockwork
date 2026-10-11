@@ -108,16 +108,33 @@ verdict refs, flagging a near-bound model that risks a timeout.
 - `FLOCKWORK_DEBUG=1` on `attribution` dumps the raw claim/verdict bodies +
   the claim's lease age (board-scoped, read-only).
 
+## Harness auto-use (opencode / codex / claude)
+
+The substrate is driven either by a headless `worker` (the `QUICKSTART` path) or
+by a human-in-the-loop **coding harness**. The harness layer turns an interactive
+session into a transparent, honest swarm run: the **opencode plugin**
+(`.opencode/`, npm `opencode-flockwork`) activates on a local `.flockwork/origin`
+marker and exposes the `fw_*` tools, and the **MCP server** (`l2/mcp_server.py`)
+exposes the same tools to any MCP client (codex, claude). Every attempt stamps
+its harness + model, so a verdict replays from the refs alone. `demo/wire_board.sh`
+wires a project in one step. Full doc: `docs/HARNESS.md`.
+
 ## Layout
 
 ```
-l2/inrepo.py      the lane law: seed/claim/work/verdict/evict + review/gate + audit
-l2/metrics.py     the opt-in JSONL observer + DORA judge
-l2/gates.py       the verdict-count gate (n-of-m reviewer agreement)
-l2/refschema.py   minimal required-field schemas; loud typed refusals
-tests/            the suite (hermetic: scratch boards, no network, no default origin)
-demo/             the scripted end-to-end (owner_test.sh) + the raw CAS demo
-docs/             00-ORIENTATION (start here), GATES, SCRATCH-BOARDS
+l2/inrepo.py       the lane law: seed/claim/work/verdict/evict + review/gate + audit
+l2/metrics.py      the opt-in JSONL observer + DORA judge
+l2/gates.py        the verdict-count gate (n-of-m reviewer agreement)
+l2/refschema.py    minimal required-field schemas; loud typed refusals
+l2/harness.py      the harness policy: marker/init, protocol, backstop, session map + ledgers
+l2/mcp_server.py   the harness-agnostic MCP server (the fw_* tools over stdio JSON-RPC)
+.opencode/         the opencode plugin (single-export) + lib + the bundled skill
+opencode-plugin/   the npm package (opencode-flockwork)
+tests/             the suite (hermetic: scratch boards, no network, no default origin)
+demo/              owner_test.sh (headless E2E), external_work_e2e.sh (interactive/E2E),
+                   wire_board.sh (wire a project), duplicate_claim.sh (CAS probe)
+docs/              00-ORIENTATION (start here), REFS-MODEL, GATES, SCRATCH-BOARDS,
+                   HARNESS (drive it from your coding agent)
 ```
 
 ## License

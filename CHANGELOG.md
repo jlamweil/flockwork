@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+- **Harness auto-use layer**: drive the board from a coding agent instead of a
+  headless worker. The **opencode plugin** (`.opencode/`, npm package
+  `opencode-flockwork`) activates on a local `.flockwork/origin` **marker only**
+  (a stray `SWARM_ORIGIN` never activates — the env-trigger was the
+  production-push hazard class), injects the canonical protocol into the system
+  prompt, and exposes the `fw_*` tools (each a thin shell-out to a `flockwork`
+  CLI verb). It is fail-safe: a missing CLI, spawn failure, timeout, or an
+  unexpected exit degrades to a no-op + a stderr warning, and it is silent in a
+  non-wired workspace.
+- **Harness-agnostic MCP server** (`l2/mcp_server.py`): the same `fw_*` tools
+  over stdio JSON-RPC for any MCP client (codex, claude, an IDE, a script). The
+  client names the board (`origin`) on every call (no default); the harness is
+  stamped from an explicit `harness` arg, the MCP `clientInfo` captured at
+  `initialize`, or an honest `unknown` — never a wrong `opencode`.
+- **Harness + model attribution**: every attempt stamps the dispatching harness
+  **and** model on the claim + verdict refs (opencode captures the session
+  model; the MCP client identity is captured at `initialize`), so a verdict
+  replays from the refs alone.
+- **`flockwork harness` CLI family**: `init` (the marker), `detect`, `protocol`
+  (the single source of truth the plugin fetches + injects), `backstop` (the
+  C11 idle-renew / abandoned-stamp trigger), `session-map` / `session-put` /
+  `session-drop`, `ledger-run` / `ledger-gate` / `read-ledger` / `ledger-dir`,
+  plus `flockwork debug <task>` (reconstructs the full run from the refs + the
+  out-of-tree ledgers).
+- **`demo/wire_board.sh`**: wire a real project as a swarm board in one step —
+  bare board (`HEAD -> main`), mirror the project's `HEAD` onto board `main`,
+  the `SCRATCH-BOARDS` smoke test, and the marker (kept gitignored).
+  Non-destructive to the project.
+- **Docs**: `docs/HARNESS.md` (the harness layer) + cross-links from
+  `README` / `QUICKSTART` / `00-ORIENTATION`; the two E2E proofs are now
+  named side by side — `demo/owner_test.sh` (headless worker) and
+  `demo/external_work_e2e.sh` (interactive / `fw_*` legs).
+
 ## v0.3.0
 
 - **Release packaging + public-source hygiene**: a GitHub Actions CI (a

@@ -11,6 +11,10 @@
 - `SCRATCH-BOARDS.md` — the board-authoring law (origin HEAD must
   resolve before workers clone) + the smoke test that makes it
   non-optional.
+- `HARNESS.md` — the harness layer: drive the board from a coding
+  agent (opencode / codex / claude) — the marker, the `fw_*` protocol,
+  the plugin + MCP wiring, `demo/wire_board.sh`, attribution, and the
+  two E2E proofs.
 
 The root `README.md` is the public entry point (what/why/status/
 quickstart/layout/license); `QUICKSTART.md` is the hands-on scratch

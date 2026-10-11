@@ -94,6 +94,11 @@ the test suite's own pattern) → refuse.
 | `demo/demo-spec.json` | the demo task's brief (`hello.txt` + `verify:`) | you want to see what a task looks like |
 | `demo/trivial_fixer.sh` | deterministic stand-in for the model dispatch | you wonder what "dispatch" means |
 | `demo/duplicate_claim.sh` | deliberate second-claim probe (CAS rejection) | you want to watch exactly-once hold |
+| `demo/external_work_e2e.sh` | the interactive/`fw_*` path end-to-end (board-truthful + exactly-once + legible crash) | you drive tasks from a harness, not a headless worker |
+| `demo/wire_board.sh` | wire a real project as a swarm board (bare board + mirror + smoke test + marker) | you want a project swarm-usable in one step |
+| `.opencode/` | the opencode plugin (single-export) + lib + the bundled `flockwork` skill | you run opencode in a wired workspace |
+| `l2/mcp_server.py` | the harness-agnostic MCP server (the `fw_*` tools over stdio) | you drive the board from codex / claude / an IDE |
+| `docs/HARNESS.md` | the harness layer: marker, `fw_*` protocol, plugin + MCP wiring, attribution | you drive it from your coding agent (opencode/codex/claude) |
 | `docs/REFS-MODEL.md` | refs-model diagram + the five verbs + honesty laws | you want the model, tightly |
 | `l2/inrepo.py` | the machinery: every verb, ref write, and gate | you change or audit behavior |
 | `tests/` | pytest suite (TDD red→green history in git log) | you touch `l2/` |
@@ -119,6 +124,10 @@ the test suite's own pattern) → refuse.
 - **"Build a board for real workers."** → `docs/SCRATCH-BOARDS.md` — the HEAD
   law + smoke test; a board whose clones check out nothing is broken, and the
   lane cannot tell you (clone rc is 0 either way).
+- **"Drive it from my coding agent (opencode / codex / claude)."** →
+  `docs/HARNESS.md` — `demo/wire_board.sh <project>` wires a board + marker,
+  then the harness runs the `fw_*` protocol (marker-only activation, honest
+  verdicts, replayable harness + model attribution).
 
 ## Reading a verdict
 
@@ -191,6 +200,18 @@ still recorded verbatim).
 refuse to claim when their `l2/inrepo.py` differs from origin main's
 published copy. *`SWARM_WORKER_MAX_FAILS`* — consecutive-failure
 budget (default 3) after which a worker gives up instead of spinning.
+
+**The harness layer (interactive):** *harness* — the coding agent driving the
+board (opencode, codex, claude, any MCP client), as opposed to the headless
+`worker`. *marker* — the local `.flockwork/origin` file (one line: the board
+origin) that is the **sole** activation source for the opencode plugin; the
+`SWARM_ORIGIN` env never activates it. *`fw_*` tools* — the interactive legs
+(`fw_brief`/`fw_claim`/`fw_work_started`/`fw_judge`/`fw_land`/`fw_verdict`/
+`fw_renew`/`fw_work_done`; `fw_work_external`/`fw_protocol` over MCP), each a
+thin shell-out to a `flockwork` CLI verb. *MCP server* — `l2/mcp_server.py`,
+harness-agnostic stdio JSON-RPC exposing those tools; the client names the board
+(`origin`) on every call and its harness is stamped from its `clientInfo`
+(defaults to an honest `unknown`). Full doc: `docs/HARNESS.md`.
 
 **Outcomes & health:** *fixed true/false* — the verdict's headline.
 *`oc_rc` / `pytest_rc`* — dispatch vs oracle exit codes; their
