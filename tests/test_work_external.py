@@ -103,3 +103,91 @@ def test_work_external_reads_verify_from_the_spec(tmp_path):
     out = m.work_external(o, "T", att, str(w), "w1", paths=["fix.py"])
     assert out["fixed"] is True
     assert out["pytest_rc"] == 0
+
+
+# -------------------------------------------------- C4b: the failure matrix
+# The four honesty laws re-proven on the external-work path.
+
+
+def test_work_external_merit_failure_no_publish(tmp_path):
+    """A change that FAILS its oracle is never a fix and never lands: main +
+    the tasks ref stay untouched, only the honest fixed:false verdict is
+    written, and the claim stays live for the TTL re-lease."""
+    m = _load_inrepo()
+    o, w, att = _work_lane(tmp_path, verify="false")
+    (w / "fix.py").write_text("def fix():\n    return 1\n")
+    out = m.work_external(o, "T", att, str(w), "w1", paths=["fix.py"])
+    assert out["fixed"] is False
+    assert out["reason"] == "merit_failure_no_publish"
+    assert out["main_push"] is False
+    assert out["return_pushed"] is False
+    assert out["verdict_pushed"] is True
+    refs = _refs(o)
+    assert f"refs/swarm/verdicts/T" in refs
+    assert f"refs/swarm/tasks/T" not in refs      # no return ref
+    assert f"refs/swarm/claims/T" in refs        # claim stays live
+    chk = tmp_path / "chk"
+    _git("clone", "-q", "-b", "main", o, str(chk))
+    assert not (chk / "fix.py").exists()          # the fix did not publish
+
+
+def test_work_external_oracle_timeout_is_merit_final(tmp_path, monkeypatch):
+    """A verify that hangs past the bound degrades to an honest measured rc
+    124 (oracle_timeout) — a merit final, not a crash; fixed:false, no
+    publish."""
+    m = _load_inrepo()
+    o, w, att = _work_lane(tmp_path, verify="sleep 30")
+    monkeypatch.setenv("SWARM_ORACLE_TIMEOUT", "2")
+    (w / "fix.py").write_text("def fix():\n    return 1\n")
+    out = m.work_external(o, "T", att, str(w), "w1", paths=["fix.py"])
+    assert out["fixed"] is False
+    assert out["pytest_rc"] == 124
+    assert out["oracle_timeout"] is True
+    assert out["reason"] == "merit_failure_no_publish"
+    assert out["verdict_pushed"] is True
+    assert f"refs/swarm/tasks/T" not in _refs(o)
+
+
+def test_work_external_rejected_push_writes_no_verdict(tmp_path):
+    """A fix that cannot land (a collision the one rebase retry did not
+    resolve) writes NO verdict — the claim stays live for a re-land / a fresh
+    session, bounded by the substrate TTL+heir; never a fixed:true the
+    substrate contradicts."""
+    m = _load_inrepo()
+    o, w, att = _work_lane(tmp_path, verify="true")
+    (w / "app.py").write_text("Y = 1\n")  # a change to a tracked file
+    adv = tmp_path / "adv"
+    _git("clone", "-q", "-b", "main", o, str(adv))
+    (adv / "app.py").write_text("Z = 2\n")
+    _git("-C", str(adv), "add", "-A")
+    _git("-C", str(adv), *_cid(), "commit", "-qm", "advance")
+    _git("-C", str(adv), *_cid(), "push", "-q", o, "main")
+    out = m.work_external(o, "T", att, str(w), "w1", paths=["app.py"])
+    assert out["fixed"] is False
+    assert out["reason"] == "main_push_rejected"
+    assert out["main_push"] is False
+    assert out["verdict_pushed"] is False
+    refs = _refs(o)
+    assert f"refs/swarm/verdicts/T" not in refs  # NO verdict
+    assert f"refs/swarm/claims/T" in refs        # claim stays live
+
+
+def test_work_external_no_diff_is_settled(tmp_path):
+    """The oracle may PASS on an unchanged tree (the settled task): no empty
+    commit is created on main; the return ref is pointed at main's tip; an
+    honest fixed:true is recorded."""
+    m = _load_inrepo()
+    o, w, att = _work_lane(tmp_path, verify="true")
+    b0 = tmp_path / "b0"
+    _git("clone", "-q", "-b", "main", o, str(b0))
+    main_before = _git("-C", str(b0), "rev-parse", "main").stdout.strip()
+    out = m.work_external(o, "T", att, str(w), "w1", paths=["app.py"])
+    assert out["fixed"] is True
+    assert out["already_on_main"] is True
+    assert out["main_push"] is False
+    assert out["return_pushed"] is True
+    assert f"refs/swarm/tasks/T" in _refs(o)
+    b1 = tmp_path / "b1"
+    _git("clone", "-q", "-b", "main", o, str(b1))
+    main_after = _git("-C", str(b1), "rev-parse", "main").stdout.strip()
+    assert main_before == main_after  # main did not advance
