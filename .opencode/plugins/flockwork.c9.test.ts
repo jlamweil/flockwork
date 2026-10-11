@@ -20,7 +20,8 @@ const zstub: unknown = new Proxy(function () { /* shape */ } as never, {
 mock.module("@opencode-ai/plugin", () => ({ tool: (x: unknown) => x }));
 mock.module("zod", () => ({ z: zstub, string: zstub, default: zstub }));
 
-const { Flockwork, fwTools, captureModel } = await import("./flockwork.ts");
+const { Flockwork } = await import("./flockwork.ts");
+const { fwTools, captureModel } = await import("../lib/flockwork.ts");
 
 const mktmp = (): string => mkdtempSync(join(tmpdir(), "fw-c9-"));
 const writeMarker = (d: string, origin: string): void => {

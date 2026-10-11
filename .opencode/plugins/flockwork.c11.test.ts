@@ -17,14 +17,14 @@ const zstub: unknown = new Proxy(function () {} as never, {
 mock.module("@opencode-ai/plugin", () => ({ tool: (x: unknown) => x }));
 mock.module("zod", () => ({ z: zstub, string: zstub, default: zstub }));
 
+const { Flockwork } = await import("./flockwork.ts");
 const {
-  Flockwork,
   shouldStall,
   touchSession,
   fireBackstop,
   _setAbandonThresholdForTest,
   _setLastActivityForTest,
-} = await import("./flockwork.ts");
+} = await import("../lib/flockwork.ts");
 
 const mktmp = (): string => mkdtempSync(join(tmpdir(), "fw-c11-"));
 const writeMarker = (d: string): void => {

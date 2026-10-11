@@ -9,13 +9,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  Flockwork,
-  active,
-  originOf,
-  runFw,
-  markerPath,
-} from "./flockwork.ts";
+import { Flockwork } from "./flockwork.ts";
+import { active, originOf, runFw, markerPath } from "../lib/flockwork.ts";
 
 const mktmp = (): string => mkdtempSync(join(tmpdir(), "fw-plugin-"));
 const mockInput = (directory: string) => ({ directory, client: undefined });
