@@ -214,6 +214,7 @@ def _run_worker(tmp_path, monkeypatch, spec_body, shim_body):
     shim = _shim(tmp_path, "dispatch.sh",
                  f"{shim_body}; touch {canary}")
     monkeypatch.setenv("SWARM_ORIGIN", str(o))
+    monkeypatch.setenv("SWARM_MODEL", "stub/model")  # L1 preflight requires a model
     monkeypatch.setenv("OPENCODE_BIN", str(shim))
     monkeypatch.setenv("SWARM_WORKER_MAX_FAILS", "3")
     monkeypatch.chdir(w)
@@ -306,6 +307,7 @@ def test_lone_law_without_schema_sibling_claims_unvalidated(
     canary = tmp_path / "lone" / "dispatched.stamp"
     shim = _shim(tmp_path / "lone", "dispatch.sh",
                  f"echo hi > hello.txt; touch {canary}")
+    monkeypatch.setenv("SWARM_MODEL", "stub/model")  # L1 preflight requires a model
     monkeypatch.setenv("OPENCODE_BIN", str(shim))
     monkeypatch.setenv("SWARM_WORKER_MAX_FAILS", "3")
     monkeypatch.chdir(w)

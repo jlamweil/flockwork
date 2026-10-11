@@ -176,8 +176,9 @@ death gets. *dispatch* — running the brief through
 `$OPENCODE_BIN run --pure -m $SWARM_MODEL <brief>` in a scratch work
 tree (`SWARM_DISPATCH_TIMEOUT`, default 600 s). *`OPENCODE_BIN`* — the
 dispatch binary; default `opencode`, set it to `demo/trivial_fixer.sh`
-for the free deterministic shim. *`SWARM_MODEL`* — model id, default
-`zai-org/GLM-5.3-Flash`. *law-freshness gate* — workers
+for the free deterministic shim. *`SWARM_MODEL`* — model id, **required**
+(no default: the worker refuses to start fail-closed, a typed
+`model_refusal`, rather than dispatch a stale id). *law-freshness gate* — workers
 refuse to claim when their `l2/inrepo.py` differs from origin main's
 published copy. *`SWARM_WORKER_MAX_FAILS`* — consecutive-failure
 budget (default 3) after which a worker gives up instead of spinning.

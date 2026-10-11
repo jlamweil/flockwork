@@ -416,3 +416,43 @@ def test_attribution_output_shape(monkeypatch, tmp_path):
         assert k in row, (k, row)
     assert row["model"] == "t3/unistra-coder" and row["kind"] == "direct"
     assert row["fixed"] == "true" and row["host"] == "w1"
+
+
+# -------------------------------------------------------- L1 fail-closed
+
+
+def test_worker_no_model_refuses_at_preflight(monkeypatch, tmp_path):
+    """L1 (fail-closed model): a worker started with no SWARM_MODEL refuses
+    at the seat preflight — a typed model_refusal event, exit 1, and no claim
+    consumed — instead of dispatching to a stale default. The refusal is
+    distinct from a claim/env death (it happens before any claim)."""
+    o, w = _lane(tmp_path)
+    # a spec the worker would claim (so there is real work to refuse over)
+    _push(o, w, _root_commit(w, "demo\nverify: true"), "refs/swarm/specs/T-x")
+    shim = tmp_path / "d.sh"
+    shim.write_text("#!/bin/sh\nexit 0\n")
+    shim.chmod(0o755)
+    env = dict(os.environ, SWARM_ORIGIN=o, OPENCODE_BIN=str(shim))
+    env.pop("SWARM_MODEL", None)
+    r = subprocess.run(
+        [sys.executable, str(REPO / "l2" / "inrepo.py"), "worker", "wm"],
+        cwd=w, env=env, capture_output=True, text=True, timeout=120)
+    events = [json.loads(ln) for ln in r.stdout.splitlines() if ln.strip()]
+    ref = [e for e in events if e.get("event") == "model_refusal"]
+    assert ref and ref[0]["worker"] == "wm", events
+    assert r.returncode == 1  # honest distinct exit
+    assert not [e for e in events if e.get("event") == "attempted"]
+    # no claim was consumed (the refusal is pre-claim)
+    assert _git("-C", str(o), "for-each-ref",
+                "refs/swarm/claims/T-x").stdout.strip() == ""
+
+
+def test_swarm_model_default_is_empty(monkeypatch):
+    """The stale GLM default is gone: with SWARM_MODEL unset, _swarm_model()
+    returns the empty string (the preflight refuses it) — never a stale
+    model id the harness cannot resolve."""
+    inrepo = _load_inrepo()
+    monkeypatch.delenv("SWARM_MODEL", raising=False)
+    assert inrepo._swarm_model() == ""
+    monkeypatch.setenv("SWARM_MODEL", "router/tier-unistra")
+    assert inrepo._swarm_model() == "router/tier-unistra"

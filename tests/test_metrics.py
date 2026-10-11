@@ -533,6 +533,7 @@ def _run_worker(tmp_path, monkeypatch, shim_body):
     w = _scratch_worker_repo(tmp_path)
     shim = _shim(tmp_path, "dispatch.sh", shim_body)
     monkeypatch.setenv("SWARM_ORIGIN", str(o))
+    monkeypatch.setenv("SWARM_MODEL", "stub/model")  # L1 preflight requires a model
     monkeypatch.setenv("FLOCKWORK_METRICS", "1")
     monkeypatch.setenv("FLOCKWORK_METRICS_FILE", str(tmp_path / "m.jsonl"))
     monkeypatch.setenv("OPENCODE_BIN", str(shim))

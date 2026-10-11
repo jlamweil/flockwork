@@ -82,11 +82,12 @@ and exited honestly with `worker_done, completed 0`); the winner
 dispatched the brief, passed the task's `verify:` oracle, landed the
 fix on main, and the board recorded a `fixed: true` verdict.
 
-**Real model dispatch:** drop `OPENCODE_BIN=demo/trivial_fixer.sh` —
-workers then send the brief to opencode headless (`SWARM_MODEL`
-selects the model, default `zai-org/GLM-5.3-Flash`). The
-`demo/trivial_fixer.sh` shim exists only so the demo is deterministic
-and free.
+**Real model dispatch:** drop `OPENCODE_BIN=demo/trivial_fixer.sh` and
+set `SWARM_MODEL` — workers then send the brief to opencode headless with
+that model. `SWARM_MODEL` is **required**: the worker refuses to start
+(fail-closed, a typed `model_refusal`) rather than dispatch to a stale
+default. The `demo/trivial_fixer.sh` shim exists only so the demo is
+deterministic and free.
 
 **A real origin instead of the scratch board:** `export SWARM_ORIGIN`
 at any origin git can reach (e.g. an ssh bare on another host) and

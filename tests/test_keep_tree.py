@@ -72,6 +72,7 @@ def _run_worker(tmp_path, monkeypatch, shim_body, keep=None, keep_dir=None):
     shim.write_text(f"#!/bin/sh\n{shim_body}\n")
     shim.chmod(0o755)
     monkeypatch.setenv("SWARM_ORIGIN", str(o))
+    monkeypatch.setenv("SWARM_MODEL", "stub/model")  # L1 preflight requires a model
     monkeypatch.setenv("OPENCODE_BIN", str(shim))
     if keep is None:
         monkeypatch.delenv("FLOCKWORK_KEEP_TREE", raising=False)

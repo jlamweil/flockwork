@@ -243,10 +243,30 @@ _BAD_TASK_MSG = (
 
 def _swarm_model() -> str:
     """The dispatched model: `SWARM_MODEL`, the exact `-m <model>` the
-    worker hands opencode. Read at claim time so the model is on the
-    pre-dispatch checkpoint; identical to the dispatch-site read (same
-    env var, same default)."""
-    return os.environ.get("SWARM_MODEL", "zai-org/GLM-5.3-Flash")
+    worker hands the harness. Read at claim time so the model is on the
+    pre-dispatch checkpoint; identical to the dispatch-site read (same env
+    var). No default: an unset model yields the empty string, which the
+    worker-start preflight refuses — the stale GLM default that dispatched
+    into a misattributed env-death loop is gone (L1 fail-closed)."""
+    return os.environ.get("SWARM_MODEL", "").strip()
+
+
+def _model_preflight(name: str) -> bool:
+    """Worker-start seat preflight (L1, fail-closed model). Returns True
+    when the worker must refuse to start: no dispatched model is set. The
+    refusal is a typed event distinct from a claim/env death — a worker with
+    no model must not consume a claim + heir budget, and must not dispatch to
+    a stale default. The resolvability check (alias present in the harness's
+    model list) is a per-harness capability behind the dispatch seam."""
+    if not _swarm_model():
+        print(json.dumps({
+            "event": "model_refusal",
+            "worker": name,
+            "model": None,
+            "reason": "no dispatched model set (SWARM_MODEL)",
+        }), flush=True)
+        return True
+    return False
 
 
 _MODEL_KIND_CACHE: dict = {}
@@ -1172,6 +1192,10 @@ def worker(name: str, only: list | None = None) -> bool:
     default 3) — a supervised worker must exit honestly distinct from
     'queue empty, done'. Transient per-task failures are recorded and
     the loop continues; the failed claim is freed best-effort."""
+    # seat preflight (L1): a worker with no dispatched model refuses before
+    # it touches the origin — no claim consumed, no stale default dispatched.
+    if _model_preflight(name):
+        return True  # honest distinct exit (CLI: exit 1)
     done = 0
     fails = 0
     claim_fails = 0
