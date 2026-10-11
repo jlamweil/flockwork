@@ -240,6 +240,14 @@ _BAD_TASK_MSG = (
 )
 
 
+def _swarm_model() -> str:
+    """The dispatched model: `SWARM_MODEL`, the exact `-m <model>` the
+    worker hands opencode. Read at claim time so the model is on the
+    pre-dispatch checkpoint; identical to the dispatch-site read (same
+    env var, same default)."""
+    return os.environ.get("SWARM_MODEL", "zai-org/GLM-5.3-Flash")
+
+
 def verdict_body(
     task: str, att: str, fixed: bool, host: str, oc_rc: int, pytest_rc: int
 ) -> str:
@@ -247,11 +255,14 @@ def verdict_body(
     error table applies downstream (124=timeout → environmental/requeue,
     model-death → requeue+exit, 0 with pytest fail → merit): the refs
     alone must separate environmental deaths from honest merit failures
-    without hunting the worker's stdout."""
+    without hunting the worker's stdout. Carries the dispatched model as a
+    structured `model:` field (the correction graph reads it from here)."""
+    model = _swarm_model()
+    model_line = f"\nmodel: {model}" if model.strip() else ""
     return (
         f"verdict\ntask: {task}\nattempt: {att}\n"
         f"fixed: {'true' if fixed else 'false'}\nhost: {host}\n"
-        f"oc_rc: {oc_rc}\npytest_rc: {pytest_rc}"
+        f"oc_rc: {oc_rc}\npytest_rc: {pytest_rc}" + model_line
     )
 
 
@@ -299,7 +310,15 @@ def claim_detail(worker: str, task: str, origin=None) -> dict:
             metrics.emit("claim", task=task, worker=worker, att=None, rc=128,
                          outcome=classify_claim_failure(128, _BAD_TASK_MSG))
         return {"att": None, "rc": 128, "stderr": _BAD_TASK_MSG}
-    c_sha, c_proc = commit_tree(empty_tree(), "-m", f"claim {task} {att}")
+    # The dispatched model is recorded on the claim body (at claim time —
+    # the pre-dispatch checkpoint) so a dispatch death still carries it.
+    # `model:` precedes the att: the att stays the LAST body token, which
+    # every att reader (sweep/relabel/graph/audit) extracts via split()[-1].
+    model = _swarm_model()
+    c_body = f"claim {task}\n{att}"
+    if model.strip():
+        c_body = f"claim {task}\nmodel: {model}\n{att}"
+    c_sha, c_proc = commit_tree(empty_tree(), "-m", c_body)
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
     r = push_sha_ref(c_sha, f"refs/swarm/claims/{task}", failed=c_proc,
                      origin=origin)
@@ -719,7 +738,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # own git root, $PWD pin). The model + binary are
     # operator-configured via SWARM_MODEL / OPENCODE_BIN.
     oc_rc = 0
-    model = os.environ.get("SWARM_MODEL", "zai-org/GLM-5.3-Flash")
+    model = _swarm_model()
     oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
     env = dict(os.environ, PWD=tree, OLDPWD=tree)
     try:
