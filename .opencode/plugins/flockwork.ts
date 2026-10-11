@@ -33,6 +33,59 @@ export const captureModel = (sessionID: string, modelID: string | undefined): vo
 };
 export const modelFor = (sessionID: string): string => sessionModels.get(sessionID) ?? "";
 
+// ------------------------------------------------------------- idle backstop
+//
+// C11-lite. Keeps a live session's claims alive + legible WITHOUT ever writing
+// a terminal verdict (that stays the TTL+heir's job). Two triggers:
+//   - chat.message (a turn starts): the session is active -> renew its claims;
+//   - session.idle (a turn ends): renew now + schedule a DELAYED abandonment
+//     check. If the session is still quiet after the threshold, it is
+//     abandoned -> stamp the non-terminal `stalled:` marker (rescue). A
+//     resumed session (a new chat.message) cancels the pending check.
+//
+// The policy lives in the substrate (`flockwork harness backstop`); this is
+// only the trigger + the quiet-since-activity decision.
+
+const lastActivity = new Map<string, number>();
+const pendingStall = new Map<string, ReturnType<typeof setTimeout>>();
+let abandonThresholdMs = 3_600_000; // a human-paced session idles for hours
+
+export const shouldStall = (
+  lastActivityMs: number | undefined,
+  nowMs: number,
+  thresholdMs: number,
+): boolean => (lastActivityMs != null && nowMs - lastActivityMs > thresholdMs);
+
+export const _setAbandonThresholdForTest = (ms: number): void => {
+  abandonThresholdMs = ms;
+};
+export const _setLastActivityForTest = (sessionID: string, ms: number): void => {
+  lastActivity.set(sessionID, ms);
+};
+
+/** Mark a session as having just been active (turn start / tool use); cancels
+ *  any pending abandonment check for it. */
+export const touchSession = (sessionID: string): void => {
+  if (!sessionID) return;
+  lastActivity.set(sessionID, Date.now());
+  const t = pendingStall.get(sessionID);
+  if (t) {
+    clearTimeout(t);
+    pendingStall.delete(sessionID);
+  }
+};
+
+/** Fire the substrate backstop for a session (idle=renew, or abandoned). The
+ *  origin comes from the local marker; a missing marker/CLI is a no-op. */
+export const fireBackstop = (directory: string, sessionID: string, abandoned: boolean): void => {
+  if (!active(directory)) return;
+  const origin = originOf(directory)!;
+  runFw(directory, [
+    "harness", "backstop", origin, sessionID,
+    ...(abandoned ? ["abandoned"] : []),
+  ]);
+};
+
 const TAG = "[flockwork]";
 
 /** Upper bound on a single CLI invocation. `fw_judge` (the oracle leg) needs
@@ -383,8 +436,39 @@ export const Flockwork: Plugin = async ({ directory, client }) => {
   // C9 (tools) + C10 (protocol injection) + C11 (idle backstop) attach here.
   return {
     tool: fwTools,
+    // C11: a turn starts -> the session is active. Renew its live claims
+    // (the per-turn lease renewal so a long human-paced task is not reaped)
+    // + cancel any pending abandonment check + capture the model.
     "chat.message": async (input) => {
-      captureModel(input.sessionID, input.model?.modelID);
+      try {
+        captureModel(input.sessionID, input.model?.modelID);
+        touchSession(input.sessionID);
+        fireBackstop(directory, input.sessionID, false);
+      } catch (e) {
+        warn(`chat.message backstop error: ${e instanceof Error ? e.message : String(e)} — continuing`);
+      }
+    },
+    // C11: a turn ends -> renew now (keeps the claim alive; NO terminal
+    // verdict) + schedule a delayed abandonment check. If the session is
+    // still quiet after the threshold, stamp the non-terminal `stalled:`
+    // marker (rescue). A resumed session cancels it (see chat.message).
+    event: async (input) => {
+      try {
+        if (input.event.type !== "session.idle") return;
+        const sid = input.event.properties.sessionID;
+        fireBackstop(directory, sid, false); // renew on the turn boundary
+        if (lastActivity.has(sid)) {
+          const t = setTimeout(() => {
+            pendingStall.delete(sid);
+            if (shouldStall(lastActivity.get(sid), Date.now(), abandonThresholdMs)) {
+              fireBackstop(directory, sid, true); // abandoned -> rescue
+            }
+          }, abandonThresholdMs);
+          pendingStall.set(sid, t);
+        }
+      } catch (e) {
+        warn(`idle backstop error: ${e instanceof Error ? e.message : String(e)} — continuing`);
+      }
     },
     // C10: append the canonical protocol to the agent's system prompt, but
     // ONLY in an active flockwork workspace (silent everywhere else).

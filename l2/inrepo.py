@@ -586,6 +586,24 @@ def mark_work_done(origin: str, task: str, att: str) -> str | None:
     return _push_claim_marker(origin, task, att, f"work_done: {iso}")
 
 
+def mark_stalled(origin: str, task: str, att: str) -> str | None:
+    """Idle-backstop checkpoint (C11-lite): mark that an abandoned session
+    stalled on this claim. NON-TERMINAL — a verdict is still to come from the
+    TTL+heir (a fresh worker re-claims after the lease expires and does the
+    honest work); the backstop never writes a terminal verdict on a plain idle.
+    It makes the abandonment legible from the refs alone (`flockwork debug`
+    shows a `stalled:` checkpoint) + resets the lease so the rescue is not
+    immediately re-swept. Idempotent by prefix, like the work checkpoints."""
+    iso = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    ref = f"refs/swarm/claims/{task}"
+    raw = origin_raw(origin, ref)
+    body = raw.partition("\n\n")[2] if (raw and raw.startswith("tree ")) else raw
+    if body and any(ln.strip().startswith("stalled:")
+                    for ln in body.split("\n")):
+        return "stalled:"  # already marked
+    return _push_claim_marker(origin, task, att, f"stalled: {iso}")
+
+
 def renew_claim(origin: str, task: str, att: str) -> str | None:
     """Re-lease a live claim the caller still owns: re-commit the body
     unchanged for a fresh committer ts (the lease age resets to now) +
@@ -2848,7 +2866,8 @@ def _claim_checkpoints(origin: str, task: str) -> dict:
     body = raw.partition("\n\n")[2] if raw.startswith("tree ") else raw
     cp = {}
     for ln in body.split("\n"):
-        for key in ("work_started:", "work_done:", "dispatch_started:"):
+        for key in ("work_started:", "work_done:", "dispatch_started:",
+                    "stalled:"):
             if ln.strip().startswith(key):
                 cp[key.rstrip(":")] = ln.strip()[len(key):].strip()
     return cp
@@ -2981,6 +3000,15 @@ def _harness_cli() -> int:
         # the canonical 2-step protocol, from the substrate (one source of
         # truth): the plugin injects this; the skill + docs reference it.
         print(harness.protocol())
+        return 0
+    if verb == "backstop":
+        if len(args) < 3:
+            print("usage: flockwork harness backstop <origin> <session> "
+                  "[abandoned]", file=sys.stderr)
+            return 2
+        origin, session = args[1], args[2]
+        abandoned = len(args) > 3 and args[3] == "abandoned"
+        print(json.dumps(harness.backstop(origin, session, abandoned), indent=1))
         return 0
     print("usage: flockwork harness {detect|init|ledger-dir|session-map"
           "|session-claims|session-put|session-drop|ledger-run|ledger-gate"

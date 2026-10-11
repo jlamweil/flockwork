@@ -238,3 +238,43 @@ Honesty rules (non-negotiable)
 def protocol() -> str:
     """The canonical 2-step protocol (see PROTOCOL). Deterministic."""
     return PROTOCOL
+
+
+# ---------------------------------------------------------- idle backstop
+#
+# C11-lite. The plugin fires this on session.idle (and per-turn on
+# chat.message for the lease renewal). It keeps a live session's claims
+# alive + legible WITHOUT ever writing a terminal verdict:
+
+#   idle (not abandoned)   -> renew each live claim + record the decision;
+#   abandonment signal     -> also stamp the non-terminal `stalled:` checkpoint
+#                             (rescue + legibility).
+#
+# A terminal verdict remains the TTL+heir's job: when a stalled/abandoned
+# claim's lease expires, a fresh worker re-claims it and does the honest work
+# (or the honest failed verdict). The backstop must never shortcut that —
+# writing a verdict on a plain idle would kill in-progress work (the oracle's
+# CORR-1).
+
+def backstop(origin: str, session: str, abandoned: bool = False) -> dict:
+    """Per live claim the session holds: renew the lease + record the gate
+    decision; on abandonment, also stamp the non-terminal `stalled:` marker.
+    NEVER writes a terminal verdict. Returns {session, claims, renewed,
+    stalled}."""
+    from l2 import inrepo  # the lease/claim legs live in the substrate
+
+    claims = session_claims(origin, session)
+    out: dict = {"session": session, "claims": len(claims),
+                 "renewed": [], "stalled": []}
+    for task, att in claims.items():
+        renewed = inrepo.renew_claim(origin, task, att) is not None
+        out["renewed"].append({"task": task, "att": att, "renewed": renewed})
+        append_gate_ledger(origin, session, {
+            "task": task, "att": att,
+            "event": "abandoned" if abandoned else "idle",
+            "renewed": renewed,
+        })
+        if abandoned:
+            inrepo.mark_stalled(origin, task, att)
+            out["stalled"].append(task)
+    return out
