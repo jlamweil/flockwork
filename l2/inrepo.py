@@ -1085,6 +1085,24 @@ def _brief_verify(origin: str, task: str) -> str | None:
     return None
 
 
+def brief_body(origin: str, task: str) -> str | None:
+    """The task's brief (the spec ref body: the work instruction + the
+    `verify:` oracle) read from the origin — None when the spec is absent.
+    The agent reads this to know WHAT to do + HOW it is verified (the brief
+    is the instruction; the verify line is the acceptance criterion)."""
+    raw = origin_raw(origin, f"refs/swarm/specs/{task}")
+    if not raw:
+        return None
+    return raw.partition("\n\n")[2] if raw.startswith("tree ") else raw
+
+
+def _worker_name() -> str:
+    """The seat's name for the verdict host line: SWARM_HOST (the plugin
+    sets it), else 'unknown' — the interactive seat is a real host, so the
+    durable verdict carries it (CORR-9)."""
+    return os.environ.get("SWARM_HOST", "").strip() or "unknown"
+
+
 def work_external(origin: str, task: str, att: str, tree: str, worker: str,
                   paths: list | None = None, verify: str | None = None) -> dict:
     """The external-work mode: the caller (an interactive agent) already did
@@ -2878,12 +2896,82 @@ def main() -> None:
             print("usage: flockwork gate <task>", file=sys.stderr)
             sys.exit(2)
         sys.exit(gate_cmd(sys.argv[2]))
+    elif mode == "brief":
+        if len(sys.argv) < 3:
+            print("usage: flockwork brief <task>", file=sys.stderr)
+            sys.exit(2)
+        body = brief_body(resolve_origin(), sys.argv[2])
+        if body is None:
+            print(json.dumps({"task": sys.argv[2], "brief": None,
+                              "reason": "spec absent"}, indent=1))
+            sys.exit(1)
+        print(body)
+    elif mode == "claim":
+        if len(sys.argv) < 3:
+            print("usage: flockwork claim <task>", file=sys.stderr)
+            sys.exit(2)
+        res = claim_detail(_worker_name(), sys.argv[2])
+        print(json.dumps({"att": res["att"]}, indent=1))
+        sys.exit(0 if res["att"] else 1)
+    elif mode == "judge":
+        if len(sys.argv) < 4:
+            print("usage: flockwork judge <task> <tree> [verify]",
+                  file=sys.stderr)
+            sys.exit(2)
+        verify = (sys.argv[4] if len(sys.argv) > 4
+                 else _brief_verify(resolve_origin(), sys.argv[2]))
+        jres = judge_tree(sys.argv[3], sys.argv[2], verify)
+        print(json.dumps(jres, indent=1))
+        sys.exit(0 if jres["rc"] == 0 else 1)
+    elif mode == "land":
+        if len(sys.argv) < 5:
+            print("usage: flockwork land <task> <att> <tree> [paths...]",
+                  file=sys.stderr)
+            sys.exit(2)
+        out = land_fix(resolve_origin(), sys.argv[4], sys.argv[2],
+                       sys.argv[3], sys.argv[5:] or None)
+        print(json.dumps(
+            {"main_pushed": out["main_pushed"],
+             "already_on_main": out["already_on_main"],
+             "return_pushed": out["return_pushed"]}, indent=1))
+        sys.exit(0 if out["main_pushed"] or out["already_on_main"] else 1)
+    elif mode == "verdict":
+        if len(sys.argv) < 7:
+            print("usage: flockwork verdict <task> <att> <true|false> "
+                  "<oc_rc> <pytest_rc> [oc_elapsed]", file=sys.stderr)
+            sys.exit(2)
+        fixed = sys.argv[4].strip().lower() in ("true", "1", "yes")
+        oc_elapsed = float(sys.argv[7]) if len(sys.argv) > 7 else None
+        r = write_verdict(resolve_origin(), sys.argv[2], sys.argv[3], fixed,
+                          _worker_name(), int(sys.argv[5]), int(sys.argv[6]),
+                          oc_elapsed)
+        print(json.dumps({"verdict_pushed": ok(r)}, indent=1))
+        sys.exit(0 if ok(r) else 1)
+    elif mode in ("renew", "work-started", "work-done"):
+        if len(sys.argv) < 4:
+            print(f"usage: flockwork {mode} <task> <att>", file=sys.stderr)
+            sys.exit(2)
+        fn = {"renew": renew_claim, "work-started": mark_work_started,
+              "work-done": mark_work_done}[mode]
+        okd = fn(resolve_origin(), sys.argv[2], sys.argv[3]) is not None
+        print(json.dumps({mode: okd}, indent=1))
+        sys.exit(0 if okd else 1)
+    elif mode == "work-external":
+        if len(sys.argv) < 5:
+            print("usage: flockwork work-external <task> <att> <tree> "
+                  "[paths...]", file=sys.stderr)
+            sys.exit(2)
+        out = work_external(resolve_origin(), sys.argv[2], sys.argv[3],
+                            sys.argv[4], _worker_name(), sys.argv[5:] or None)
+        print(json.dumps(out, indent=1))
+        sys.exit(0 if out.get("fixed") else 1)
     else:
         print(
             f"unknown mode: {mode}\n"
             "usage: flockwork {seed|worker|audit|review|gate|sweep"
             "|open_tasks|reconcile|relabel|divergence|correction-graph"
-            "|attribution|durations} ...",
+            "|attribution|durations|brief|claim|judge|land|verdict|renew"
+            "|work-started|work-done|work-external} ...",
             file=sys.stderr,
         )
         sys.exit(2)
