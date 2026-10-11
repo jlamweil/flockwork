@@ -18,10 +18,20 @@
  *
  * Scope: silent unless the workspace declares a .flockwork/origin marker.
  */
-import type { Plugin } from "@opencode-ai/plugin";
+import { tool, type Plugin } from "@opencode-ai/plugin";
+import { z } from "zod";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+/** Per-session model ID captured from the chat.message hook, so the substrate
+ *  can report the model/harness that actually did the work (CORR-9: a verdict
+ *  that says "model: unknown" is not replayable). Empty when unset. */
+const sessionModels = new Map<string, string>();
+export const captureModel = (sessionID: string, modelID: string | undefined): void => {
+  if (sessionID && modelID) sessionModels.set(sessionID, modelID);
+};
+export const modelFor = (sessionID: string): string => sessionModels.get(sessionID) ?? "";
 
 const TAG = "[flockwork]";
 
@@ -76,11 +86,12 @@ export const runFw = (
   directory: string,
   argv: string[],
   timeoutMs = FW_DEFAULT_TIMEOUT_MS,
+  extraEnv?: Record<string, string>,
 ): SpawnSyncReturns<Buffer> | undefined => {
   const prefix = resolveFw();
   const origin = originOf(directory);
   try {
-    const env: Record<string, string> = { ...process.env };
+    const env: Record<string, string> = { ...process.env, ...extraEnv };
     if (origin) env.SWARM_ORIGIN = origin;
     const res = spawnSync(prefix[0], [...prefix.slice(1), ...argv], {
       cwd: directory,
@@ -101,6 +112,227 @@ export const runFw = (
   }
 };
 
+// ---------------------------------------------------------- the fw_* tools
+//
+// Each is a thin shell-out to a substrate CLI verb (the policy lives in
+// Python). The shared shape: refuse typed when the workspace is not a
+// flockwork board or the CLI cannot run (fail-safe no-op); on success, record
+// the session->claim mapping + the run ledger so the idle backstop (C11) and
+// `flockwork debug` can see what this session did.
+
+/** The model/harness env for a spawn (CORR-9): the substrate reports the model
+ *  + harness that actually did the work, so a verdict is replayable from the
+ *  refs alone (never "model: unknown"). */
+const fwEnv = (sessionID: string): Record<string, string> => {
+  const env: Record<string, string> = { SWARM_HOST: "opencode" };
+  const model = modelFor(sessionID);
+  if (model) env.SWARM_MODEL = model;
+  return env;
+};
+
+const notWorkspace = {
+  output: "not a flockwork workspace (no .flockwork/origin marker) — nothing done",
+  metadata: { ok: false, reason: "not-a-workspace" },
+};
+const cliDown = {
+  output: "flockwork CLI could not run — failing safe (no-op)",
+  metadata: { ok: false, reason: "cli-unavailable" },
+};
+
+type ToolCtx = { sessionID: string; directory: string };
+
+/** Parse the CLI's JSON stdout into an object ({} on a non-JSON body). */
+const parseJson = (s: string | null | undefined): Record<string, unknown> => {
+  try {
+    const t = (s ?? "").trim();
+    return t ? (JSON.parse(t) as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+};
+
+/** Record a live claim in the durable session map + run ledger. */
+const recordClaim = (ctx: ToolCtx, origin: string, task: string, att: string, leg: string): void => {
+  runFw(ctx.directory, ["harness", "session-put", origin, ctx.sessionID, task, att]);
+  runFw(ctx.directory, [
+    "harness", "ledger-run", origin,
+    JSON.stringify({ session: ctx.sessionID, task, att, leg }),
+  ]);
+};
+
+/** Settle a claim (drop it from the session map + log the terminal leg). */
+const settleClaim = (ctx: ToolCtx, origin: string, task: string, leg: string, extra: Record<string, unknown> = {}): void => {
+  runFw(ctx.directory, ["harness", "session-drop", origin, ctx.sessionID, task]);
+  runFw(ctx.directory, [
+    "harness", "ledger-run", origin,
+    JSON.stringify({ session: ctx.sessionID, task, leg, ...extra }),
+  ]);
+};
+
+export const fwTools = {
+  fw_brief: tool({
+    description:
+      "Read the brief (spec) for a task on the swarm board: what to do + the " +
+      "verify command that will judge the work. Call this before claiming.",
+    args: { task: z.string() },
+    execute: async (args: { task: string }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const res = runFw(ctx.directory, ["brief", args.task], FW_DEFAULT_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      if (res.status !== 0) {
+        return { output: `brief unavailable (rc ${res.status}): ${(res.stderr ?? res.stdout ?? "").trim()}`, metadata: { ok: false } };
+      }
+      return { output: res.stdout?.trim() ?? "", metadata: { ok: true } };
+    },
+  }),
+
+  fw_claim: tool({
+    description:
+      "Claim a task on the swarm board (takes a lease on it). Returns the " +
+      "attestation token (att) that identifies THIS work attempt; pass it to " +
+      "fw_judge / fw_land / fw_verdict. If the claim is lost (already claimed " +
+      "or rejected), it reports a typed refusal.",
+    args: { task: z.string() },
+    execute: async (args: { task: string }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const res = runFw(ctx.directory, ["claim", args.task], FW_DEFAULT_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      const parsed = parseJson(res.stdout);
+      const att = typeof parsed.att === "string" ? parsed.att : "";
+      if (res.status !== 0 || !att) {
+        return {
+          output: `claim failed (rc ${res.status}): ${((res.stderr ?? res.stdout ?? "").trim()) || "lost the race or rejected"}`,
+          metadata: { ok: false },
+        };
+      }
+      recordClaim(ctx, origin, args.task, att, "claim");
+      return { output: `claimed ${args.task}\natt=${att}\n${res.stdout?.trim() ?? ""}`, metadata: { ok: true, att } };
+    },
+  }),
+
+  fw_work_started: tool({
+    description:
+      "Checkpoint that work on a claimed task has actually begun (updates the " +
+      "claim so a crash is legible + keeps attribution honest).",
+    args: { task: z.string(), att: z.string() },
+    execute: async (args: { task: string; att: string }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const res = runFw(ctx.directory, ["work-started", args.task, args.att], FW_DEFAULT_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      const okd = res.status === 0;
+      recordClaim(ctx, origin, args.task, args.att, "work_started");
+      return { output: okd ? `work_started ${args.task}` : `work-started not recorded (rc ${res.status})`, metadata: { ok: okd } };
+    },
+  }),
+
+  fw_judge: tool({
+    description:
+      "Run the task's verify command (the oracle) against your working tree. " +
+      "Returns whether the oracle passed (rc 0) + its detail. THIS MAY BLOCK " +
+      "FOR MINUTES (it runs the full verify suite) — it is the merit leg: a " +
+      "failing oracle is an honest result, not an error.",
+    args: { task: z.string(), tree: z.string(), verify: z.string().optional() },
+    execute: async (args: { task: string; tree: string; verify?: string }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const argv = args.verify
+        ? ["judge", args.task, args.tree, args.verify]
+        : ["judge", args.task, args.tree];
+      const res = runFw(ctx.directory, argv, FW_JUDGE_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      const parsed = parseJson(res.stdout);
+      const passed = res.status === 0;
+      const detail = typeof parsed.detail === "string" ? parsed.detail : (res.stderr ?? res.stdout ?? "").trim();
+      return {
+        output: `oracle ${passed ? "PASSED" : "FAILED"} (rc ${res.status})\n${detail}`.trim(),
+        metadata: { ok: true, passed, rc: res.status },
+      };
+    },
+  }),
+
+  fw_land: tool({
+    description:
+      "Land the working-tree fix: commit the scoped changeset, push it to the " +
+      "board main (with one bounded rebase retry), and push the H1 return ref. " +
+      "Pass ONLY the files you changed (paths); if omitted the whole tree is " +
+      "used. A rejected push (behind main) is reported, not forced.",
+    args: { task: z.string(), att: z.string(), tree: z.string(), paths: z.array(z.string()).optional() },
+    execute: async (args: { task: string; att: string; tree: string; paths?: string[] }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const argv = ["land", args.task, args.att, args.tree, ...(args.paths ?? [])];
+      const res = runFw(ctx.directory, argv, FW_DEFAULT_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      const parsed = parseJson(res.stdout);
+      const okd = res.status === 0;
+      return {
+        output: `land ${okd ? "succeeded" : "failed"} (rc ${res.status})\n${res.stdout?.trim() ?? (res.stderr ?? "")}`.trim(),
+        metadata: { ok: okd, ...(typeof parsed.main_pushed === "boolean" ? { main_pushed: parsed.main_pushed } : {}), ...(typeof parsed.return_pushed === "boolean" ? { return_pushed: parsed.return_pushed } : {}) },
+      };
+    },
+  }),
+
+  fw_verdict: tool({
+    description:
+      "Write the terminal, create-once verdict for the claimed task (fixed true/" +
+      "false + the harness/oracle rc + elapsed). Call this exactly once, after " +
+      "fw_land, to settle the task. This is the ONLY tool that may write a " +
+      "verdict from an interactive session.",
+    args: { task: z.string(), att: z.string(), fixed: z.boolean(), oc_rc: z.number(), pytest_rc: z.number(), oc_elapsed: z.number().optional() },
+    execute: async (args: { task: string; att: string; fixed: boolean; oc_rc: number; pytest_rc: number; oc_elapsed?: number }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const argv = ["verdict", args.task, args.att, args.fixed ? "true" : "false", String(args.oc_rc), String(args.pytest_rc)];
+      if (args.oc_elapsed != null) argv.push(String(args.oc_elapsed));
+      const res = runFw(ctx.directory, argv, FW_DEFAULT_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      const parsed = parseJson(res.stdout);
+      const okd = res.status === 0 && parsed.verdict_pushed === true;
+      if (okd) settleClaim(ctx, origin, args.task, "verdict", { fixed: args.fixed });
+      return {
+        output: okd ? `verdict written: ${args.task} fixed=${args.fixed}` : `verdict NOT written (rc ${res.status}): ${((res.stderr ?? res.stdout ?? "").trim()) || "create-once refusal (a verdict already exists)"}`,
+        metadata: { ok: okd },
+      };
+    },
+  }),
+
+  fw_renew: tool({
+    description:
+      "Renew the lease on a claimed task (fresh timestamp, same att) so a " +
+      "long-running interactive session is not reaped as stale. Call this " +
+      "periodically during long work.",
+    args: { task: z.string(), att: z.string() },
+    execute: async (args: { task: string; att: string }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const res = runFw(ctx.directory, ["renew", args.task, args.att], FW_DEFAULT_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      const okd = res.status === 0;
+      runFw(ctx.directory, ["harness", "ledger-gate", origin, JSON.stringify({ session: ctx.sessionID, task: args.task, decision: okd ? "renewed" : "renew-failed" })]);
+      return { output: okd ? `renewed ${args.task}` : `renew failed (rc ${res.status})`, metadata: { ok: okd } };
+    },
+  }),
+
+  fw_work_done: tool({
+    description:
+      "Checkpoint that work on a claimed task is complete (settles the " +
+      "session's live-claim tracking so the idle backstop stops renewing it).",
+    args: { task: z.string(), att: z.string() },
+    execute: async (args: { task: string; att: string }, ctx: ToolCtx) => {
+      if (!active(ctx.directory)) return notWorkspace;
+      const origin = originOf(ctx.directory)!;
+      const res = runFw(ctx.directory, ["work-done", args.task, args.att], FW_DEFAULT_TIMEOUT_MS, fwEnv(ctx.sessionID));
+      if (!res) return cliDown;
+      const okd = res.status === 0;
+      settleClaim(ctx, origin, args.task, "work_done");
+      return { output: okd ? `work_done ${args.task}` : `work-done not recorded (rc ${res.status})`, metadata: { ok: okd } };
+    },
+  }),
+};
+
 export const Flockwork: Plugin = async ({ directory, client }) => {
   // Idempotency: opencode can load the repo-local copy and a global copy in
   // the same process; only the first registers hooks.
@@ -118,9 +350,14 @@ export const Flockwork: Plugin = async ({ directory, client }) => {
 
   debug(`plugin loaded; active=${active(directory)}`);
 
-  // C8 skeleton: no hooks registered yet. C9 (tools), C10 (protocol), and
-  // C11 (idle backstop) attach their hooks here.
-  return {};
+  // C9: register the fw_* tools. C10 (protocol) + C11 (idle backstop) attach
+  // their hooks alongside.
+  return {
+    tool: fwTools,
+    "chat.message": async (input) => {
+      captureModel(input.sessionID, input.model?.modelID);
+    },
+  };
 };
 
 export default Flockwork;

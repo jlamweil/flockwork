@@ -51,10 +51,12 @@ describe("plugin load (C8 skeleton)", () => {
     delete (globalThis as Record<string, unknown>).__flockworkRegistered;
   });
 
-  test("loads and returns an empty hooks object without throwing", async () => {
+  test("loads and returns a hooks object without throwing", async () => {
     const d = mktmp();
     const hooks = await Flockwork(mockInput(d));
-    expect(hooks).toEqual({});
+    // a well-formed hooks object (the fw_* tools + hooks attach here from C9+)
+    expect(typeof hooks).toBe("object");
+    expect(hooks).not.toBeNull();
   });
 
   test("idempotency guard: a second load is a no-op (no double-register)", async () => {
