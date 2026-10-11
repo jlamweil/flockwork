@@ -1897,28 +1897,18 @@ def audit(only: list | None = None) -> None:
 # --------------------------------------------------- correction graph
 
 
-def mm_model_of(att: str) -> str | None:
-    """Model identity from an att token alone, per the correction-graph
-    label grammar: worker labels declare mm-<model>-<role>, so
-    att-mm-<model>-<role>-<hex6> attributes the attempt to <model>. The
-    model token is '-'-free (dots/underscores only) and the hex6 suffix
-    is fixed-width, so the split is unambiguous: the model is the FIRST
-    token after 'mm-' and the role — the seat host, which may itself
-    carry '-' — occupies everything between them. Anything else (pre-
-    protocol labels, missing role, an empty model token, a malformed
-    suffix) attributes as None: an honest unknown vertex, never a
-    silently misfiled one. Grammar tokens are refname-safe [A-Za-z0-9._-].
-    """
-    parts = att.split("-")
-    if (
-        len(parts) >= 5
-        and parts[0] == "att"
-        and parts[1] == "mm"
-        and parts[2]
-        and re.fullmatch(r"[0-9a-f]{6}", parts[-1])
-    ):
-        return parts[2]
-    return None
+def _model_from_body(body: str) -> str:
+    """The dispatched model recorded in a ref body (`model: <m>`) — the
+    exact `-m <model>` the worker handed opencode. 'unknown' when absent
+    (pre-protocol claims, env deaths that never reached a model-bearing
+    claim): an honest blind vertex, never a guess. The att token alone can
+    never carry the true model — deriving it from the att grammar was the
+    mm misparse this replaces."""
+    for ln in body.splitlines():
+        k, _, val = ln.partition(":")
+        if k.strip() == "model":
+            return val.strip() or "unknown"
+    return "unknown"
 
 
 def correction_graph(origin: str) -> dict:
@@ -1932,8 +1922,10 @@ def correction_graph(origin: str) -> dict:
     verdict exists — the verdict's attempt. Edges are 'corrects' links
     between consecutive attempts ordered by claim-commit time (the
     heir/reconcile law creates them; nothing here writes refs). Model
-    attribution comes from mm_model_of on the att token: refs + commit
-    objects must carry the whole story — no ledger, no env, no log.
+    attribution comes from the `model:` field in each attempt's ref body —
+    the exact dispatched model, 'unknown' when absent (pre-protocol
+    claims). Refs + commit objects must carry the whole story — no
+    ledger, no env, no log.
 
     Read-only: ls-remote + origin object reads, never a ref write. An
     unreachable origin raises — an empty graph must mean an empty
@@ -1947,6 +1939,7 @@ def correction_graph(origin: str) -> dict:
     G = {"origin": origin, "tasks": {}, "edges": [], "models": {}}
     for t in tasks:
         v_att = None
+        v_model = "unknown"
         vref = f"refs/swarm/verdicts/{t}"
         if vref in have:
             # Strict reads — the verdict ref is board-visible, so a
@@ -1963,21 +1956,28 @@ def correction_graph(origin: str) -> dict:
                 k, _, val = ln.partition(":")
                 if k.strip() == "attempt":
                     v_att = val.strip()
-        raw = [
-            (ref.split("@", 1)[1], ref)
-            for ref in have
-            if ref.startswith(f"refs/swarm/archive/claims/{t}@")
-        ]
+                elif k.strip() == "model":
+                    v_model = val.strip() or "unknown"
+        # Each candidate attempt carries the model parsed from its own ref
+        # body (the exact dispatched model; 'unknown' when absent). The
+        # archived + live claims are strict reads (board-visible refs —
+        # the same law as the verdict above).
+        raw = []
+        for ref in have:
+            if ref.startswith(f"refs/swarm/archive/claims/{t}@"):
+                abody = _origin_body_strict(origin, ref)
+                raw.append((ref.split("@", 1)[1], ref, _model_from_body(abody)))
         cref = f"refs/swarm/claims/{t}"
         if cref in have:
             # Strict read (board-visible ref) — same law.
-            cand = _origin_body_strict(origin, cref).strip().split()
+            cbody = _origin_body_strict(origin, cref)
+            cand = cbody.strip().split()
             if cand and cand[-1].startswith("att-"):
-                raw.append((cand[-1], cref))
-        if v_att and v_att not in [a for a, _ in raw]:
-            raw.append((v_att, vref))  # verdict-only vertex (claim gone)
+                raw.append((cand[-1], cref, _model_from_body(cbody)))
+        if v_att and v_att not in [a for a, _, _ in raw]:
+            raw.append((v_att, vref, v_model))  # verdict-only vertex (claim gone)
         attempts = []
-        for att, ref in raw:
+        for att, ref, model in raw:
             attempts.append(
                 {
                     "att": att,
@@ -1988,7 +1988,7 @@ def correction_graph(origin: str) -> dict:
                     "ts": _committer_ts_from_raw(
                         _origin_raw_strict(origin, ref)
                     ),
-                    "model": mm_model_of(att),
+                    "model": model,
                     "final": att == v_att,
                 }
             )
