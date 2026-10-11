@@ -18,10 +18,40 @@ stdio loop.
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "flockwork"
+
+# The MCP server is harness-AGNOSTIC: the substrate stamps `harness:
+# <SWARM_DISPATCH>` (default "opencode") on claims/verdicts. That default is
+# wrong here — a codex/claude/… client driving the board must not leave a
+# verdict that claims "opencode" (CORR-9: a mislabelled verdict is not
+# replayable). So the server names the actual harness on the substrate env for
+# the duration of each call, from (in order) an explicit `harness` tool arg,
+# the MCP client identity captured at `initialize`, or an honest "unknown".
+_KNOWN_HARNESSES = ("opencode", "codex", "claude", "gemini", "aider", "goose", "amp")
+_client_harness: str | None = None
+
+
+def _norm_harness(name) -> str:
+    """Map an MCP clientInfo.name to a harness label (lowercase; a known
+    harness wins on a substring match, else the cleaned raw name)."""
+    if not isinstance(name, str):
+        return ""
+    low = name.strip().lower()
+    for k in _KNOWN_HARNESSES:
+        if k in low:
+            return k
+    return low
+
+
+def _harness_for(args: dict) -> str:
+    h = args.get("harness")
+    if isinstance(h, str) and h.strip():
+        return _norm_harness(h)
+    return _client_harness or "unknown"
 
 
 def _version() -> str:
@@ -80,6 +110,24 @@ def dispatch(name: str, args: dict) -> dict:
     if not task:
         return _fail("task is required")
 
+    # Name the actual harness on the substrate for this call (the substrate
+    # stamps `harness:` on claims/verdicts from SWARM_DISPATCH); restore the
+    # env afterward so the server's own environment is untouched.
+    _prev = os.environ.get("SWARM_DISPATCH")
+    os.environ["SWARM_DISPATCH"] = _harness_for(args)
+    try:
+        return _board_ops(name, args, origin, task, inrepo)
+    finally:
+        if _prev is None:
+            os.environ.pop("SWARM_DISPATCH", None)
+        else:
+            os.environ["SWARM_DISPATCH"] = _prev
+
+
+def _board_ops(name: str, args: dict, origin: str, task: str, inrepo) -> dict:
+    """The board-op routing (brief/claim/judge/land/verdict/renew/work_*).
+    Kept separate from dispatch() so the harness-env set/restore wraps the
+    whole group at once."""
     if name == "fw_brief":
         body = inrepo.brief_body(origin, task)
         if body is None:
@@ -175,6 +223,11 @@ _ATT = {"type": "string", "description": "the attestation token from fw_claim"}
 _TREE = {"type": "string", "description": "the working-tree path"}
 _PATHS = {"type": "array", "items": {"type": "string"},
           "description": "the scoped files changed (None = whole tree)"}
+_HARNESS = {"type": "string",
+            "description": "the coding harness doing the work (opencode, "
+                           "codex, claude, ...); stamped on the refs for "
+                           "replayable attribution (defaults to the MCP "
+                           "client identity, else 'unknown')"}
 
 TOOLS: list = [
     _tool("fw_protocol", "Print the canonical 2-step swarm protocol.",
@@ -184,7 +237,8 @@ TOOLS: list = [
           ["origin", "task"]),
     _tool("fw_claim", "Claim a task (take the lease); returns the att token.",
           {"origin": _ORIGIN, "task": _TASK,
-           "worker": {"type": "string", "description": "the worker name"}},
+           "worker": {"type": "string", "description": "the worker name"},
+           "harness": _HARNESS},
           ["origin", "task"]),
     _tool("fw_judge", "Run the task's verify command (the oracle) against the "
           "working tree. Returns the honest rc (may block for minutes).",
@@ -199,12 +253,13 @@ TOOLS: list = [
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT, "tree": _TREE,
            "paths": _PATHS},
           ["origin", "task", "att", "tree"]),
-    _tool("fw_verdict", "Write the terminal create-once verdict (fixed true/"
+     _tool("fw_verdict", "Write the terminal create-once verdict (fixed true/"
           "false + rcs + elapsed). Exactly once per claim.",
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT,
            "fixed": {"type": "boolean"}, "oc_rc": {"type": "integer"},
            "pytest_rc": {"type": "integer"},
-           "oc_elapsed": {"type": "number"}},
+           "oc_elapsed": {"type": "number"},
+           "harness": _HARNESS},
           ["origin", "task", "att", "fixed", "oc_rc", "pytest_rc"]),
     _tool("fw_renew", "Renew the lease on a claimed task (long work).",
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT},
@@ -215,11 +270,12 @@ TOOLS: list = [
     _tool("fw_work_done", "Checkpoint that work on a claimed task completed.",
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT},
           ["origin", "task", "att"]),
-    _tool("fw_work_external", "The full external-work leg in one call "
+     _tool("fw_work_external", "The full external-work leg in one call "
           "(work_started -> judge -> land -> verdict -> work_done).",
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT, "tree": _TREE,
            "paths": _PATHS,
-           "verify": {"type": "string", "description": "override the verify"}},
+           "verify": {"type": "string", "description": "override the verify"},
+           "harness": _HARNESS},
           ["origin", "task", "att", "tree"]),
 ]
 
@@ -240,6 +296,9 @@ def handle(req: dict) -> dict | None:
     rid = req.get("id")
     params = req.get("params") or {}
     if method == "initialize":
+        global _client_harness
+        name = (params.get("clientInfo") or {}).get("name")
+        _client_harness = _norm_harness(name) or None
         return _resp(rid, {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {}},

@@ -124,6 +124,68 @@ def test_failing_oracle_is_honest_not_an_error(tmp_path):
     assert j["structuredContent"]["rc"] != 0
 
 
+def _claim_body(o, task):
+    return _git("show", f"refs/swarm/claims/{task}", cwd=o).stdout
+
+
+def _verdict_body(o, task):
+    return _git("show", f"refs/swarm/verdicts/{task}", cwd=o).stdout
+
+
+def test_mcp_stamps_explicit_harness_not_opencode(tmp_path):
+    """The MCP caller names its harness; the claim + verdict stamp it (not the
+    substrate's opencode default) — board honesty (CORR-9: a verdict that says
+    the wrong harness is not replayable)."""
+    m = _load()
+    o, w = _board(tmp_path)
+    c = m.dispatch("fw_claim", {"origin": o, "task": "T-mcp", "harness": "codex"})
+    assert c["isError"] is False
+    att = c["structuredContent"]["att"]
+    assert "harness: codex" in _claim_body(o, "T-mcp")
+    (pathlib.Path(w) / "f.txt").write_text("fixed\n")
+    v = m.dispatch("fw_verdict", {"origin": o, "task": "T-mcp", "att": att,
+                                  "fixed": True, "oc_rc": 0, "pytest_rc": 0,
+                                  "harness": "codex"})
+    assert v["isError"] is False
+    vb = _verdict_body(o, "T-mcp")
+    assert "harness: codex" in vb
+    assert "harness: opencode" not in vb
+
+
+def test_mcp_client_info_sets_harness(tmp_path):
+    """The MCP client identity (initialize clientInfo) is the harness default,
+    so a codex client's claim stamps harness: codex with NO explicit arg."""
+    m = _load()
+    m.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+              "params": {"clientInfo": {"name": "codex-cli", "version": "1"}}})
+    o, _w = _board(tmp_path)
+    c = m.dispatch("fw_claim", {"origin": o, "task": "T-mcp"})
+    assert c["isError"] is False
+    assert "harness: codex" in _claim_body(o, "T-mcp")
+
+
+def test_mcp_default_harness_is_honest_not_opencode(tmp_path):
+    """No client identity + no explicit harness -> the board does NOT claim
+    opencode (an unknown MCP client is 'unknown', never mislabelled)."""
+    m = _load()
+    o, _w = _board(tmp_path)
+    c = m.dispatch("fw_claim", {"origin": o, "task": "T-mcp"})
+    assert c["isError"] is False
+    body = _claim_body(o, "T-mcp")
+    assert "harness: opencode" not in body
+    assert "harness: unknown" in body
+
+
+def test_mcp_env_is_restored_after_dispatch(tmp_path, monkeypatch):
+    """Setting the harness for a call must not leak SWARM_DISPATCH into the
+    server's environment after the call (the substrate reads it per-call)."""
+    m = _load()
+    monkeypatch.delenv("SWARM_DISPATCH", raising=False)
+    o, _w = _board(tmp_path)
+    m.dispatch("fw_claim", {"origin": o, "task": "T-mcp", "harness": "codex"})
+    assert "SWARM_DISPATCH" not in os.environ
+
+
 def test_stdio_framing_end_to_end(tmp_path):
     """A real subprocess speaking the newline-delimited JSON-RPC stdio
     transport: initialize -> tools/list -> tools/call(fw_protocol)."""
