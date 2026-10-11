@@ -500,6 +500,18 @@ def _push_dispatch_started(origin: str, task: str, att: str,
     return iso if ok(r) else None
 
 
+def _claim_age_s(origin: str, cref: str) -> float | None:
+    """The claim's lease age (now - committer ts), or None when undateable
+    (the honest degraded read — a failed/malformed object is not an age)."""
+    try:
+        ts = _committer_ts_from_raw(_origin_raw_strict(origin, cref))
+    except RuntimeError:
+        return None
+    if ts is None:
+        return None
+    return round(time.time() - ts, 1)
+
+
 _MODEL_KIND_CACHE: dict = {}
 
 
@@ -553,23 +565,27 @@ def _model_kind(model: str) -> str:
 
 
 def verdict_body(
-    task: str, att: str, fixed: bool, host: str, oc_rc: int, pytest_rc: int
+    task: str, att: str, fixed: bool, host: str, oc_rc: int, pytest_rc: int,
+    oc_elapsed: float | None = None,
 ) -> str:
     """Verdict commit message. oc_rc carries the dispatch exit code so the
     error table applies downstream (124=timeout → environmental/requeue,
     model-death → requeue+exit, 0 with pytest fail → merit): the refs
     alone must separate environmental deaths from honest merit failures
-    without hunting the worker's stdout. Carries the dispatched model as a
-    structured `model:` field (the correction graph reads it from here)."""
+    without hunting the worker's stdout. Carries the dispatched model +
+    harness + the dispatch wall-clock (oc_elapsed, when the dispatch ran) as
+    structured fields — the correction graph + durations read them from here
+    (the verdict body is the durable source, not the off-by-default JSONL)."""
     model = _swarm_model()
     model_line = (
         f"\nmodel: {model}\nkind: {_model_kind(model)}" if model.strip() else ""
     )
+    elapsed_line = f"\noc_elapsed: {oc_elapsed}" if oc_elapsed is not None else ""
     return (
         f"verdict\ntask: {task}\nattempt: {att}\n"
         f"fixed: {'true' if fixed else 'false'}\nhost: {host}\n"
         f"oc_rc: {oc_rc}\npytest_rc: {pytest_rc}\n"
-        f"harness: {_dispatch_harness()}" + model_line
+        f"harness: {_dispatch_harness()}" + elapsed_line + model_line
     )
 
 
@@ -1131,7 +1147,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         v_sha, v_proc = commit_tree(
             et,
             "-m",
-            verdict_body(task, att, False, worker, oc_rc, 1),
+            verdict_body(task, att, False, worker, oc_rc, 1, oc_elapsed),
         )
         r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
         return {
@@ -1199,7 +1215,8 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         kept, kept_err = (None, None)
         if keep_tree_enabled():
             kept, kept_err = keep_attempt_tree(task, att, tree)
-        v_body = verdict_body(task, att, False, worker, oc_rc, pr.returncode)
+        v_body = verdict_body(task, att, False, worker, oc_rc, pr.returncode,
+                              oc_elapsed)
         if kept:
             v_body += f"\nkept: {kept}"
         et = empty_tree()
@@ -1370,7 +1387,8 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     et = empty_tree()
     v_sha, v_proc = commit_tree(
         et,
-        "-m", verdict_body(task, att, fixed, worker, oc_rc, pr.returncode)
+        "-m", verdict_body(task, att, fixed, worker, oc_rc, pr.returncode,
+                           oc_elapsed)
     )
     r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
     # oc_err: the dispatch stderr tail on a non-zero rc (captured at the
@@ -1683,6 +1701,7 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
         "stale": [],
         "swept": [],
         "fresh": [],
+        "aging": [],
         "healthy": [],
         "anomalies": [],
         "errors": [],
@@ -1717,6 +1736,13 @@ def reconcile(origin: str, ttl_s: float | None = None) -> dict:
         age = now - ts
         if age <= ttl_s:
             out["fresh"].append(t)
+            if age > 0.5 * ttl_s:
+                # L6.5: an early warning that the claim is approaching the
+                # lease (age > 0.5*TTL) — a slow run that risks being swept
+                # mid-flight, flagged before it is stale.
+                out["aging"].append(
+                    {"task": t, "age_s": round(age, 1),
+                     "threshold_s": round(0.5 * ttl_s, 1)})
             continue
         shape = "+".join(
             k for k, present in (("claim", True), ("return", has_t), ("verdict", has_v)) if present
@@ -2373,7 +2399,8 @@ def attribution(origin: str | None = None) -> dict:
     origin = resolve_origin(origin)
     have = require_remote(origin)
     g = correction_graph(origin)
-    out = {"origin": origin, "tasks": {}, "interrupted": {}}
+    out = {"origin": origin, "tasks": {}, "interrupted": {},
+           "in_progress": {}}
     for t, td in g["tasks"].items():
         vref = f"refs/swarm/verdicts/{t}"
         vfields = {}
@@ -2396,30 +2423,36 @@ def attribution(origin: str | None = None) -> dict:
                 "archived": archived,
             })
         out["tasks"][t] = rows
-        # L5.3: a live claim that marks dispatch_started yet has no verdict +
-        # no archive, aged past the lease bound, is a legible crash —
-        # 'interrupted'. From the refs alone (no metrics); within the bound
-        # it may still be running, so it is not reported.
+        # L5.3/L6.3: a live claim with no verdict is either still running
+        # (within the lease bound -> in_progress / no_verdict_yet) or, if it
+        # marks dispatch_started + has no archive + is past the bound, a
+        # legible crash (interrupted). From the refs alone (no metrics).
         cref = f"refs/swarm/claims/{t}"
         if cref in have and f"refs/swarm/verdicts/{t}" not in have:
             cbody = _origin_body_strict(origin, cref)
-            if "dispatch_started:" in cbody:
-                live_att = cbody.strip().split()[-1]
-                if f"refs/swarm/archive/claims/{t}@{live_att}" not in have:
-                    ts = _committer_ts_from_raw(_origin_raw_strict(origin, cref))
-                    if ts is not None:
-                        age = time.time() - ts
-                        bound = float(
-                            os.environ.get("SWARM_LEASE_TTL", "1800"))
-                        if age > bound:
-                            out["interrupted"][t] = {
-                                "att": live_att,
-                                "claim_age_s": round(age, 1),
-                                "bound_s": bound,
-                                "note": ("dispatch started, no verdict, no "
-                                         "archive, past the lease bound — a "
-                                         "crash mid-run"),
-                            }
+            live_att = cbody.strip().split()[-1]
+            ts = _committer_ts_from_raw(_origin_raw_strict(origin, cref))
+            bound = float(os.environ.get("SWARM_LEASE_TTL", "1800"))
+            if ts is not None:
+                age = time.time() - ts
+                started = "dispatch_started:" in cbody
+                archived = f"refs/swarm/archive/claims/{t}@{live_att}" in have
+                if age <= bound:
+                    out["in_progress"][t] = {
+                        "att": live_att,
+                        "status": "no_verdict_yet",
+                        "claim_age_s": round(age, 1),
+                        "bound_s": bound,
+                        "dispatch_started": started,
+                    }
+                elif started and not archived:
+                    out["interrupted"][t] = {
+                        "att": live_att,
+                        "claim_age_s": round(age, 1),
+                        "bound_s": bound,
+                        "note": ("dispatch started, no verdict, no archive, "
+                                 "past the lease bound — a crash mid-run"),
+                    }
     if os.environ.get("FLOCKWORK_DEBUG", "").strip().lower() in (
             "1", "true", "yes"):
         out["debug"] = {
@@ -2430,10 +2463,64 @@ def attribution(origin: str | None = None) -> dict:
                 "verdict_body": _origin_body_strict(
                     origin, f"refs/swarm/verdicts/{t}")
                 if f"refs/swarm/verdicts/{t}" in have else None,
+                # L6.4: the claim's lease age (a slow/aging claim is visible
+                # without hunting the worker's stdout), board-scoped.
+                "claim_age_s": _claim_age_s(
+                    origin, f"refs/swarm/claims/{t}")
+                if f"refs/swarm/claims/{t}" in have else None,
             }
             for t in out["tasks"]
         }
     return out
+
+
+def durations(origin: str | None = None, bound_s: float | None = None) -> dict:
+    """L6.2 durations surface: the per-model (and per-harness) oc_elapsed
+    distribution, read from the VERDICT REFS — the durable source, so it works
+    with metrics off (the JSONL log is off-by-default). A model whose max
+    oc_elapsed approaches the dispatch bound is flagged near_bound (it risks a
+    124 timeout -> env_death -> requeue). Read-only, same law as attribution."""
+    origin = resolve_origin(origin)
+    if bound_s is None:
+        bound_s = float(os.environ.get("SWARM_DISPATCH_TIMEOUT", "600"))
+    have = require_remote(origin)
+    vrefs = [r for r in have
+             if r.startswith("refs/swarm/verdicts/") and "@" not in r]
+    per_model: dict = {}
+    for vref in vrefs:
+        body = _origin_body_strict(origin, vref)
+        fields = {}
+        for ln in body.splitlines():
+            k, _, val = ln.partition(":")
+            fields[k.strip()] = val.strip()
+        model = fields.get("model") or "unknown"
+        harness = fields.get("harness") or "unknown"
+        raw_el = fields.get("oc_elapsed")
+        if raw_el is None:
+            continue  # no dispatch wall-clock (pre-dispatch death)
+        try:
+            el = float(raw_el)
+        except ValueError:
+            continue
+        d = per_model.setdefault(
+            model, {"n": 0, "min_s": None, "max_s": None, "sum_s": 0.0,
+                    "harness": harness})
+        d["n"] += 1
+        d["min_s"] = el if d["min_s"] is None else min(d["min_s"], el)
+        d["max_s"] = el if d["max_s"] is None else max(d["max_s"], el)
+        d["sum_s"] += el
+    models = {}
+    for m, d in per_model.items():
+        models[m] = {
+            "n": d["n"],
+            "min_s": round(d["min_s"], 2),
+            "max_s": round(d["max_s"], 2),
+            "mean_s": round(d["sum_s"] / d["n"], 2) if d["n"] else None,
+            "harness": d["harness"],
+            "near_bound": bool(d["max_s"] is not None
+                               and d["max_s"] >= 0.9 * bound_s),
+        }
+    return {"origin": origin, "bound_s": bound_s, "models": models}
 
 
 # ------------------------------------------------ verdict-count gate CLI
@@ -2524,6 +2611,15 @@ def main() -> None:
             ),
             indent=1,
         ))
+    elif mode == "durations":
+        bound = float(sys.argv[3]) if len(sys.argv) > 3 else None
+        print(json.dumps(
+            durations(
+                sys.argv[2] if len(sys.argv) > 2 else resolve_origin(),
+                bound_s=bound,
+            ),
+            indent=1,
+        ))
     elif mode == "review":
         if len(sys.argv) < 5:
             print("usage: flockwork review <task> <reviewer> "
@@ -2541,7 +2637,8 @@ def main() -> None:
         print(
             f"unknown mode: {mode}\n"
             "usage: flockwork {seed|worker|audit|review|gate|sweep"
-            "|open_tasks|reconcile|relabel|divergence|correction-graph} ...",
+            "|open_tasks|reconcile|relabel|divergence|correction-graph"
+            "|attribution|durations} ...",
             file=sys.stderr,
         )
         sys.exit(2)

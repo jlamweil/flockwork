@@ -778,3 +778,78 @@ def test_dispatch_streaming_parity_with_blob(monkeypatch, tmp_path):
     assert blob[0] == stream[0] == 3  # same rc: the dispatch meaning is unchanged
     assert blob[2]  # blob-capture recovers the stderr tail
     assert stream[2]  # streaming recovers the error (from the error event or stderr)
+
+
+# ------------------------------------------------------- L6 debug surface
+
+
+def test_durations_reports_per_model_from_verdict_refs(monkeypatch, tmp_path):
+    """L6.2 (B5): durations reports the per-model oc_elapsed distribution from
+    the VERDICT REFS (works with metrics off — the JSONL is off-by-default) +
+    flags a near-bound model (oc_elapsed approaching the dispatch bound)."""
+    inrepo = _load_inrepo()
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    # distinct tasks per verdict (one verdict ref per task); the model groups
+    # them (ma has two, mb has one).
+    for task, model, el in (("T-ma-1", "ma", "5.0"),
+                            ("T-ma-2", "ma", "8.0"),
+                            ("T-mb-1", "mb", "590.0")):
+        body = (f"verdict\ntask: {task}\nattempt: att-w1-x\nfixed: true\n"
+                f"host: w1\noc_rc: 0\npytest_rc: 0\noc_elapsed: {el}\n"
+                f"harness: opencode\nmodel: {model}\nkind: direct")
+        _push(o, w, _root_commit(w, body), f"refs/swarm/verdicts/{task}")
+        _push(o, w, _root_commit(w, f"task {task}\nverify: true"),
+              f"refs/swarm/specs/{task}")
+    out = inrepo.durations(o, bound_s=600)
+    a = out["models"]["ma"]
+    assert a["n"] == 2 and a["min_s"] == 5.0 and a["max_s"] == 8.0, out
+    b = out["models"]["mb"]
+    assert b["n"] == 1 and b["max_s"] == 590.0, out
+    assert b["near_bound"] is True  # 590 approaching the 600 bound
+    assert a["near_bound"] is False
+
+
+def test_attribution_in_progress_no_verdict_yet(monkeypatch, tmp_path):
+    """L6.3: a live claim with no verdict, within the lease bound, is reported
+    in_progress (no_verdict_yet) with its age — a running board is legible
+    (distinct from the aged interrupted case)."""
+    inrepo = _load_inrepo()
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    _push(o, w, _root_commit(w, "task T-run\nverify: true"),
+          "refs/swarm/specs/T-run")
+    body = ("claim T-run\nharness: opencode\n"
+            "dispatch_started: 20261011T000000Z\natt-w1-run001")
+    et = _git("-C", w, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
+    sha = _git("-C", w, "commit-tree", et, "-m", body).stdout.strip()
+    subprocess.run(["git", "-C", w, "push", "-q", "-f", str(o),
+                    f"{sha}:refs/swarm/claims/T-run"],
+                   capture_output=True, text=True)
+    out = inrepo.attribution(o)
+    assert "T-run" in out.get("in_progress", {}), out.get("in_progress")
+    ip = out["in_progress"]["T-run"]
+    assert ip["status"] == "no_verdict_yet" and ip["claim_age_s"] >= 0
+
+
+def test_reconcile_flags_aging_claim(monkeypatch, tmp_path):
+    """L6.5: a claim aged past 0.5*TTL (but within TTL) is flagged aging — an
+    early warning that it is approaching the lease, before it is swept."""
+    inrepo = _load_inrepo()
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    import datetime
+    d = (datetime.datetime.now(datetime.timezone.utc)
+         - datetime.timedelta(seconds=75)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    body = "claim T-age\nharness: opencode\natt-w1-age001"
+    et = _git("-C", w, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
+    sha = subprocess.run(
+        ["git", "-C", w, "commit-tree", et, "-m", body],
+        env=dict(os.environ, GIT_COMMITTER_DATE=d, GIT_AUTHOR_DATE=d),
+        capture_output=True, text=True).stdout.strip()
+    subprocess.run(["git", "-C", w, "push", "-q", "-f", str(o),
+                    f"{sha}:refs/swarm/claims/T-age"],
+                   capture_output=True, text=True)
+    out = inrepo.reconcile(o, ttl_s=100)
+    aging = {x.get("task") for x in out.get("aging", [])}
+    assert "T-age" in aging, out  # 75s past, 0.5*100=50 threshold, age<=100
