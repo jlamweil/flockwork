@@ -251,22 +251,100 @@ def _swarm_model() -> str:
     return os.environ.get("SWARM_MODEL", "").strip()
 
 
+_KNOWN_HARNESSES = ("opencode",)
+
+
+def _dispatch_harness() -> str:
+    """The dispatch harness: `SWARM_DISPATCH` (default opencode). Selects the
+    adapter in the dispatch seam; the worker-start preflight refuses a value
+    it does not know (a config error must not dispatch)."""
+    return (os.environ.get("SWARM_DISPATCH", "opencode").strip().lower()
+            or "opencode")
+
+
+def _opencode_model_list(oc_bin: str) -> list | None:
+    """The opencode model listing (best-effort, ~seconds). Returns the model
+    ids on a successful non-empty listing; None on a failed or empty listing
+    — 'cannot see' is not 'empty', so a missing listing is never a refusal
+    (the house cannot-see law)."""
+    try:
+        r = subprocess.run([oc_bin, "models"], capture_output=True,
+                           text=True, timeout=15)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if r.returncode != 0:
+        return None
+    ids = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+    return ids or None
+
+
+def _seat_refuse(name: str, event: str, reason: str) -> None:
+    """Emit a typed seat-preflight refusal (distinct from a claim/env death):
+    the worker exits 1 before it touches the origin, so no claim + heir
+    budget is consumed."""
+    print(json.dumps({
+        "event": event, "worker": name, "model": _swarm_model() or None,
+        "harness": _dispatch_harness(), "reason": reason,
+    }), flush=True)
+
+
 def _model_preflight(name: str) -> bool:
-    """Worker-start seat preflight (L1, fail-closed model). Returns True
-    when the worker must refuse to start: no dispatched model is set. The
-    refusal is a typed event distinct from a claim/env death — a worker with
-    no model must not consume a claim + heir budget, and must not dispatch to
-    a stale default. The resolvability check (alias present in the harness's
-    model list) is a per-harness capability behind the dispatch seam."""
-    if not _swarm_model():
-        print(json.dumps({
-            "event": "model_refusal",
-            "worker": name,
-            "model": None,
-            "reason": "no dispatched model set (SWARM_MODEL)",
-        }), flush=True)
+    """Worker-start seat preflight (L1/L2, fail-closed). Returns True when
+    the worker must refuse to start: no dispatched model (L1 — the stale
+    default is gone, an unset model must not dispatch), an unknown dispatch
+    harness (L2 — a config error), or a model absent from a successful,
+    non-empty harness model listing (the alias check: a stale id must not
+    spend a dispatch). A failed/empty listing proceeds (cannot-see law)."""
+    model = _swarm_model()
+    if not model:
+        _seat_refuse(name, "model_refusal",
+                     "no dispatched model set (SWARM_MODEL)")
         return True
+    harness = _dispatch_harness()
+    if harness not in _KNOWN_HARNESSES:
+        _seat_refuse(name, "dispatch_refusal",
+                     f"unknown SWARM_DISPATCH {harness!r} "
+                     f"(known: {', '.join(_KNOWN_HARNESSES)})")
+        return True
+    # Alias resolvability (opt-in, SWARM_MODEL_STRICT=1): a stale id must not
+    # spend a dispatch. Opt-in because the check invokes the harness binary
+    # with `models`, and a dispatch shim with side effects on any invocation
+    # would be tripped by a default-on probe; a real stale model still fails
+    # fast at dispatch (the harness rejects it → env_death → requeue).
+    if harness == "opencode" and os.environ.get("SWARM_MODEL_STRICT", "") == "1":
+        listing = _opencode_model_list(os.environ.get("OPENCODE_BIN", "opencode"))
+        if listing is not None and model not in listing:
+            _seat_refuse(name, "model_refusal",
+                         f"model {model!r} not in opencode model list")
+            return True
     return False
+
+
+def _dispatch(harness: str, model: str, brief: str, tree: str):
+    """The dispatch seam (L2): select the adapter by `harness` and run the
+    brief in a scratch work tree. Returns (rc, elapsed, err) — the same
+    contract the inlined opencode leg had, so the downstream classification
+    (no_changes / env_death / heir) is untouched. opencode is the default;
+    freebuff (the proven swarmo adapter) is added behind this seam. `err` is
+    captured at the source so a timeout (no CompletedProcess) still yields a
+    clean empty tail instead of an unbound reference."""
+    env = dict(os.environ, PWD=tree, OLDPWD=tree)
+    t0 = time.monotonic()
+    if harness == "opencode":
+        oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
+        try:
+            oc = sh(
+                [oc_bin, "run", "--pure", "-m", model, brief],
+                cwd=tree,
+                env=env,
+                timeout=int(os.environ.get("SWARM_DISPATCH_TIMEOUT", "600")),
+            )
+            rc, err = oc.returncode, oc.stderr or ""
+        except subprocess.TimeoutExpired:
+            rc, err = 124, ""
+    else:  # unreachable: the seat preflight gates the harness value
+        raise ValueError(f"unknown dispatch harness: {harness}")
+    return rc, round(time.monotonic() - t0, 2), err
 
 
 _MODEL_KIND_CACHE: dict = {}
@@ -337,7 +415,8 @@ def verdict_body(
     return (
         f"verdict\ntask: {task}\nattempt: {att}\n"
         f"fixed: {'true' if fixed else 'false'}\nhost: {host}\n"
-        f"oc_rc: {oc_rc}\npytest_rc: {pytest_rc}" + model_line
+        f"oc_rc: {oc_rc}\npytest_rc: {pytest_rc}\n"
+        f"harness: {_dispatch_harness()}" + model_line
     )
 
 
@@ -391,9 +470,10 @@ def claim_detail(worker: str, task: str, origin=None) -> dict:
     # every att reader (sweep/relabel/graph/audit) extracts via split()[-1].
     model = _swarm_model()
     kind = _model_kind(model) if model.strip() else "unknown"
-    c_body = f"claim {task}\n{att}"
+    h = _dispatch_harness()
+    c_body = f"claim {task}\nharness: {h}\n{att}"
     if model.strip():
-        c_body = f"claim {task}\nmodel: {model}\nkind: {kind}\n{att}"
+        c_body = f"claim {task}\nharness: {h}\nmodel: {model}\nkind: {kind}\n{att}"
     c_sha, c_proc = commit_tree(empty_tree(), "-m", c_body)
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
     r = push_sha_ref(c_sha, f"refs/swarm/claims/{task}", failed=c_proc,
@@ -577,6 +657,7 @@ def work_task(worker: str, task: str, att: str) -> dict:
         model = _swarm_model()
         out["model"] = model
         out["kind"] = _model_kind(model) if model.strip() else "unknown"
+        out["harness"] = _dispatch_harness()
         # metrics (observe-only): the attempt's judged outcome
         # (verdict) and any requeue decision (heir) as the event carries
         # them — recorded after the fact, never instead of the return.
@@ -820,29 +901,14 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         ),
         None,
     )
-    # real work: dispatch the brief to the model (opencode headless —
-    # own git root, $PWD pin). The model + binary are
-    # operator-configured via SWARM_MODEL / OPENCODE_BIN.
-    oc_rc = 0
-    oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
-    env = dict(os.environ, PWD=tree, OLDPWD=tree)
-    oc_t0 = time.monotonic()
-    try:
-        # SWARM_DISPATCH_TIMEOUT: model-size must fit task-size; a pro
-        # model on a contract test needs >420s (large-model timing)
-        oc = sh(
-            [oc_bin, "run", "--pure", "-m", model, brief],
-            cwd=tree,
-            env=env,
-            timeout=int(os.environ.get("SWARM_DISPATCH_TIMEOUT", "600")),
-        )
-        oc_rc = oc.returncode
-    except subprocess.TimeoutExpired:
-        oc_rc = 124
-    # oc_elapsed: wall-clock of the dispatch leg — the bound when it timed
-    # out (the TimeoutExpired branch yields the same delta). A slow
-    # dispatch is now visible at the checkpoint.
-    oc_elapsed = round(time.monotonic() - oc_t0, 2)
+    # real work: dispatch the brief to the model via the seam. The harness,
+    # model, and binary are operator-configured (SWARM_DISPATCH / SWARM_MODEL
+    # / OPENCODE_BIN); SWARM_DISPATCH_TIMEOUT bounds the dispatch leg.
+    harness = _dispatch_harness()
+    # oc_rc: dispatch exit code; oc_elapsed: wall-clock of the dispatch leg
+    # (the bound when it timed out); oc_stderr: captured at the source so a
+    # timeout (no CompletedProcess) still yields a clean empty tail.
+    oc_rc, oc_elapsed, oc_stderr = _dispatch(harness, model, brief, tree)
     # The classification, BEFORE any ref is written: an environmental
     # death is a dispatch that failed leaving no work in the tree
     # (124=timeout counts even with partial work — partial orphan work
@@ -1146,11 +1212,9 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         "-m", verdict_body(task, att, fixed, worker, oc_rc, pr.returncode)
     )
     r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
-    oc_err = ""
-    try:
-        oc_err = (oc.stderr or "")[-200:] if oc.returncode else ""
-    except Exception:  # noqa: BLE001 — external-driver path has no oc
-        oc_err = ""
+    # oc_err: the dispatch stderr tail on a non-zero rc (captured at the
+    # dispatch seam; a timeout yields the clean empty tail).
+    oc_err = (oc_stderr or "")[-200:] if oc_rc else ""
     out = {
         "event": "attempted",
         "worker": worker,

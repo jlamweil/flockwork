@@ -277,7 +277,7 @@ def test_claim_on_well_formed_spec_is_byte_identical(tmp_path, monkeypatch):
         ["event", "worker", "task", "att", "fixed", "pytest_rc", "oc_rc",
          "oc_elapsed", "oc_err", "env_death", "heir_exhausted", "main_push",
          "already_on_main", "return_pushed", "verdict_pushed", "model",
-         "kind"])
+         "kind", "harness"])
 
 
 def test_lone_law_without_schema_sibling_claims_unvalidated(

@@ -456,3 +456,98 @@ def test_swarm_model_default_is_empty(monkeypatch):
     assert inrepo._swarm_model() == ""
     monkeypatch.setenv("SWARM_MODEL", "router/tier-unistra")
     assert inrepo._swarm_model() == "router/tier-unistra"
+
+
+# ------------------------------------------------------- L2 dispatch seam
+
+
+def test_dispatch_seam_opencode_contract(monkeypatch, tmp_path):
+    """L2: _dispatch('opencode', ...) returns the same (rc, elapsed, err)
+    contract the inlined leg had — success → rc 0; a failing stub → rc!=0
+    with the stderr captured (the caller derives oc_err from it)."""
+    inrepo = _load_inrepo()
+    _git("init", "-q", "-b", "main", str(tmp_path / "w"))
+    ok = tmp_path / "ok.sh"
+    ok.write_text("#!/bin/sh\nexit 0\n")
+    ok.chmod(0o755)
+    monkeypatch.setenv("OPENCODE_BIN", str(ok))
+    rc, elapsed, err = inrepo._dispatch("opencode", "m", "b", str(tmp_path / "w"))
+    assert rc == 0 and elapsed >= 0 and err == ""
+    bad = tmp_path / "bad.sh"
+    bad.write_text("#!/bin/sh\necho boom >&2; exit 3\n")
+    bad.chmod(0o755)
+    monkeypatch.setenv("OPENCODE_BIN", str(bad))
+    rc, elapsed, err = inrepo._dispatch("opencode", "m", "b", str(tmp_path / "w"))
+    assert rc == 3 and "boom" in err
+
+
+def test_dispatch_refusal_unknown_harness(monkeypatch, tmp_path):
+    """L2: an unknown SWARM_DISPATCH is refused at the seat preflight — a
+    typed dispatch_refusal, exit 1, no claim consumed (a config error must
+    not burn a claim + heir budget mid-attempt)."""
+    o, w = _lane(tmp_path)
+    _push(o, w, _root_commit(w, "demo\nverify: true"), "refs/swarm/specs/T-x")
+    shim = tmp_path / "d.sh"
+    shim.write_text("#!/bin/sh\nexit 0\n")
+    shim.chmod(0o755)
+    env = dict(os.environ, SWARM_ORIGIN=o, SWARM_MODEL="stub/model",
+               OPENCODE_BIN=str(shim), SWARM_DISPATCH="bogus")
+    r = subprocess.run(
+        [sys.executable, str(REPO / "l2" / "inrepo.py"), "worker", "wm"],
+        cwd=w, env=env, capture_output=True, text=True, timeout=120)
+    events = [json.loads(ln) for ln in r.stdout.splitlines() if ln.strip()]
+    ref = [e for e in events if e.get("event") == "dispatch_refusal"]
+    assert ref and ref[0]["harness"] == "bogus", events
+    assert r.returncode == 1
+    assert not [e for e in events if e.get("event") == "attempted"]
+
+
+def test_harness_stamped_on_bodies_and_event(monkeypatch, tmp_path):
+    """L2: the dispatch harness is stamped on the verdict body, the claim
+    body, and the attempt event, so attribution is harness-aware (per-
+    harness durations become computable from the refs)."""
+    inrepo = _load_inrepo()
+    monkeypatch.setenv("SWARM_DISPATCH", "opencode")
+    vb = inrepo.verdict_body("T", "att-w1-abcd12", True, "w1", 0, 0)
+    assert "harness: opencode" in vb
+    # claim body: harness present, att still the last token
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.chdir(w)
+    res = inrepo.claim_detail("w1", "T-h")
+    body = _body(o, "refs/swarm/claims/T-h")
+    assert "harness: opencode" in body
+    assert body.strip().split()[-1] == res["att"]  # att-last holds
+
+
+def test_alias_refusal_on_opencode_listing(monkeypatch, tmp_path):
+    """L2 alias resolvability: a successful, non-empty opencode model listing
+    that lacks the requested model is refused at the preflight (a stale id
+    must not dispatch); a model in the listing proceeds; an empty/failed
+    listing is 'cannot see' and proceeds (the house law)."""
+    o, w = _lane(tmp_path)
+    _push(o, w, _root_commit(w, "demo\nverify: true"), "refs/swarm/specs/T-x")
+    shim = tmp_path / "d.sh"
+    shim.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in models) echo stub/known-model; exit 0;; esac\n'
+        "exit 0\n")
+    shim.chmod(0o755)
+
+    def _run(model):
+        env = dict(os.environ, SWARM_ORIGIN=o, SWARM_MODEL=model,
+                   OPENCODE_BIN=str(shim), SWARM_MODEL_STRICT="1")
+        return subprocess.run(
+            [sys.executable, str(REPO / "l2" / "inrepo.py"), "worker", "wm"],
+            cwd=w, env=env, capture_output=True, text=True, timeout=120)
+
+    r = _run("stub/unknown")
+    events = [json.loads(ln) for ln in r.stdout.splitlines() if ln.strip()]
+    assert [e for e in events if e.get("event") == "model_refusal"], events
+    assert r.returncode == 1  # refused before dispatch
+
+    r = _run("stub/known-model")
+    events = [json.loads(ln) for ln in r.stdout.splitlines() if ln.strip()]
+    assert not [e for e in events if e.get("event") == "model_refusal"], events
+    assert r.returncode == 0  # proceeded (the stub dispatched + no work done)
