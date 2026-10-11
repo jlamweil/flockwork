@@ -981,6 +981,26 @@ def land_fix(origin: str, tree: str, task: str, att: str,
     }
 
 
+def write_verdict(origin: str, task: str, att: str, fixed: bool,
+                  worker: str, oc_rc: int, pytest_rc: int,
+                  oc_elapsed: float | None = None, extra: str = ""):
+    """Write the create-once terminal verdict for an attempt: a ROOT commit
+    (L1 — never on main lineage) carrying verdict_body(...) (+ `extra`, e.g.
+    the keep-tree path), pushed to refs/swarm/verdicts/<task> with the
+    failed-commit proc preserved (a failed commit-tree NEVER becomes a push —
+    the phantom-verdict class: git reads an empty refspec as a ref deletion
+    and exits 0). Returns the push proc; the caller reads ok(r) for
+    verdict_pushed. Create-once (the ref must be absent) — a second write for
+    the same task is rejected."""
+    body = verdict_body(task, att, fixed, worker, oc_rc, pytest_rc, oc_elapsed)
+    if extra:
+        body += extra
+    et = empty_tree()
+    v_sha, v_proc = commit_tree(et, "-m", body)
+    return push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}",
+                        failed=v_proc, origin=origin)
+
+
 def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # ONE origin resolved at attempt entry — clone, spec fetch,
     # main publish, return ref and every verdict push touch exactly it
@@ -1050,13 +1070,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         # what keeps the task out of the queue until reconcile's TTL
         # re-lease, the lane's deliberate slow path), main and the tasks
         # ref stay untouched.
-        et = empty_tree()
-        v_sha, v_proc = commit_tree(
-            et,
-            "-m",
-            verdict_body(task, att, False, worker, 1, 1),
-        )
-        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
+        r3 = write_verdict(origin, task, att, False, worker, 1, 1)
         return {
             "event": "attempted",
             "worker": worker,
@@ -1131,13 +1145,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             return ev
         # budget spent: ONLY the final verdict is written — main and the
         # tasks ref stay untouched (the heir-exhausted law).
-        et = empty_tree()
-        v_sha, v_proc = commit_tree(
-            et,
-            "-m",
-            verdict_body(task, att, False, worker, 1, 1),
-        )
-        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
+        r3 = write_verdict(origin, task, att, False, worker, 1, 1)
         return {
             "event": "attempted",
             "worker": worker,
@@ -1287,13 +1295,8 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         # dispatch never worked — so pytest_rc is recorded as a plain 1
         # (not a pass), never as a measured result. ONLY the final
         # verdict is written; main and the tasks ref stay untouched.
-        et = empty_tree()
-        v_sha, v_proc = commit_tree(
-            et,
-            "-m",
-            verdict_body(task, att, False, worker, oc_rc, 1, oc_elapsed),
-        )
-        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
+        r3 = write_verdict(origin, task, att, False, worker, oc_rc, 1,
+                           oc_elapsed)
         return {
             "event": "attempted",
             "worker": worker,
@@ -1341,13 +1344,9 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         kept, kept_err = (None, None)
         if keep_tree_enabled():
             kept, kept_err = keep_attempt_tree(task, att, tree)
-        v_body = verdict_body(task, att, False, worker, oc_rc, pr_rc,
-                              oc_elapsed)
-        if kept:
-            v_body += f"\nkept: {kept}"
-        et = empty_tree()
-        v_sha, v_proc = commit_tree(et, "-m", v_body)
-        r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
+        r3 = write_verdict(origin, task, att, False, worker, oc_rc, pr_rc,
+                           oc_elapsed,
+                           extra=f"\nkept: {kept}" if kept else "")
         out = {
             "event": "attempted",
             "worker": worker,
@@ -1450,14 +1449,10 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # verdict is the substrate-lie shape the merit-fail and heir-exhausted
     # env-death paths never commit. The live claim keeps the task out of
     # open_tasks; reconcile's TTL may re-lease it later.
-    # L1 verdict: ROOT commit
-    et = empty_tree()
-    v_sha, v_proc = commit_tree(
-        et,
-        "-m", verdict_body(task, att, fixed, worker, oc_rc, pr_rc,
-                           oc_elapsed)
-    )
-    r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
+    # L1 verdict: ROOT commit (create-once; write_verdict preserves the
+    # commit's own failed proc — a failed commit-tree never becomes a push).
+    r3 = write_verdict(origin, task, att, fixed, worker, oc_rc, pr_rc,
+                       oc_elapsed)
     # oc_err: the dispatch stderr tail on a non-zero rc (captured at the
     # dispatch seam; a timeout yields the clean empty tail).
     oc_err = (oc_stderr or "")[-200:] if oc_rc else ""
