@@ -50,6 +50,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from urllib.parse import urlparse
 
 try:
@@ -248,6 +249,58 @@ def _swarm_model() -> str:
     return os.environ.get("SWARM_MODEL", "zai-org/GLM-5.3-Flash")
 
 
+_MODEL_KIND_CACHE: dict = {}
+
+
+def _classify_kind_from_config(cfg, model: str) -> str:
+    """'chain' if the requested alias maps to >1 backend (a litellm
+    fallback/model group), 'direct' if exactly one, 'unknown' if the alias
+    is absent or the payload shape is unrecognized. The litellm /model_info
+    payload is {"model_list": [{"model_name":..., "litellm_params": {...}},
+    ...]}; a group is >1 entry sharing the same model_name."""
+    ml = cfg.get("model_list") if isinstance(cfg, dict) else None
+    if not isinstance(ml, list):
+        return "unknown"
+    backends = [e for e in ml if isinstance(e, dict) and e.get("model_name") == model]
+    if not backends:
+        return "unknown"
+    return "chain" if len(backends) > 1 else "direct"
+
+
+def _query_router_kind(model: str) -> str:
+    """Fetch the router's litellm config and classify the model. Best-effort
+    + bounded (2s): any timeout/error -> 'unknown'. SWARM_ROUTER_URL (default
+    the 127.0.0.1:4000 tunnel); an optional SWARM_ROUTER_KEY is sent as a
+    Bearer header. Most worker seats lack the tunnel and degrade to
+    'unknown' fast (connection refused)."""
+    url = os.environ.get("SWARM_ROUTER_URL", "http://127.0.0.1:4000")
+    req = urllib.request.Request(url + "/model_info")
+    key = os.environ.get("SWARM_ROUTER_KEY", "").strip()
+    if key:
+        req.add_header("Authorization", "Bearer " + key)
+    try:
+        with urllib.request.urlopen(req, timeout=2) as r:
+            return _classify_kind_from_config(json.load(r), model)
+    except Exception:
+        return "unknown"
+
+
+def _model_kind(model: str) -> str:
+    """The honest chain/direct flag for a requested model. Source, in order:
+    (1) operator env SWARM_MODEL_KIND (chain|direct) — an explicit assertion,
+    used without touching the router; (2) the router's litellm config, fetched
+    best-effort under a 2s bound. Cached per distinct model for the worker's
+    life (a worker handling many claims under one router pays one query, not
+    one per claim). Never gates the dispatch or grows an attempt: it is a
+    checkpoint annotation, best-effort by design."""
+    if model in _MODEL_KIND_CACHE:
+        return _MODEL_KIND_CACHE[model]
+    k = os.environ.get("SWARM_MODEL_KIND", "").strip().lower()
+    kind = k if k in ("chain", "direct") else _query_router_kind(model)
+    _MODEL_KIND_CACHE[model] = kind
+    return kind
+
+
 def verdict_body(
     task: str, att: str, fixed: bool, host: str, oc_rc: int, pytest_rc: int
 ) -> str:
@@ -258,7 +311,9 @@ def verdict_body(
     without hunting the worker's stdout. Carries the dispatched model as a
     structured `model:` field (the correction graph reads it from here)."""
     model = _swarm_model()
-    model_line = f"\nmodel: {model}" if model.strip() else ""
+    model_line = (
+        f"\nmodel: {model}\nkind: {_model_kind(model)}" if model.strip() else ""
+    )
     return (
         f"verdict\ntask: {task}\nattempt: {att}\n"
         f"fixed: {'true' if fixed else 'false'}\nhost: {host}\n"
@@ -315,9 +370,10 @@ def claim_detail(worker: str, task: str, origin=None) -> dict:
     # `model:` precedes the att: the att stays the LAST body token, which
     # every att reader (sweep/relabel/graph/audit) extracts via split()[-1].
     model = _swarm_model()
+    kind = _model_kind(model) if model.strip() else "unknown"
     c_body = f"claim {task}\n{att}"
     if model.strip():
-        c_body = f"claim {task}\nmodel: {model}\n{att}"
+        c_body = f"claim {task}\nmodel: {model}\nkind: {kind}\n{att}"
     c_sha, c_proc = commit_tree(empty_tree(), "-m", c_body)
     lease = f"--force-with-lease=refs/swarm/claims/{task}:"
     r = push_sha_ref(c_sha, f"refs/swarm/claims/{task}", failed=c_proc,
@@ -1911,6 +1967,17 @@ def _model_from_body(body: str) -> str:
     return "unknown"
 
 
+def _kind_from_body(body: str) -> str:
+    """The chain/direct flag recorded in a ref body (`kind: <k>`), or
+    'unknown' when absent (pre-protocol claims, or a claim whose router
+    query degraded to unknown)."""
+    for ln in body.splitlines():
+        k, _, val = ln.partition(":")
+        if k.strip() == "kind":
+            return val.strip() or "unknown"
+    return "unknown"
+
+
 def correction_graph(origin: str) -> dict:
     """Multi-model correction graph, reconstructed from refs alone.
 
@@ -1940,6 +2007,7 @@ def correction_graph(origin: str) -> dict:
     for t in tasks:
         v_att = None
         v_model = "unknown"
+        v_kind = "unknown"
         vref = f"refs/swarm/verdicts/{t}"
         if vref in have:
             # Strict reads — the verdict ref is board-visible, so a
@@ -1958,6 +2026,8 @@ def correction_graph(origin: str) -> dict:
                     v_att = val.strip()
                 elif k.strip() == "model":
                     v_model = val.strip() or "unknown"
+                elif k.strip() == "kind":
+                    v_kind = val.strip() or "unknown"
         # Each candidate attempt carries the model parsed from its own ref
         # body (the exact dispatched model; 'unknown' when absent). The
         # archived + live claims are strict reads (board-visible refs —
@@ -1966,18 +2036,21 @@ def correction_graph(origin: str) -> dict:
         for ref in have:
             if ref.startswith(f"refs/swarm/archive/claims/{t}@"):
                 abody = _origin_body_strict(origin, ref)
-                raw.append((ref.split("@", 1)[1], ref, _model_from_body(abody)))
+                raw.append((ref.split("@", 1)[1], ref,
+                            _model_from_body(abody), _kind_from_body(abody)))
         cref = f"refs/swarm/claims/{t}"
         if cref in have:
             # Strict read (board-visible ref) — same law.
             cbody = _origin_body_strict(origin, cref)
             cand = cbody.strip().split()
             if cand and cand[-1].startswith("att-"):
-                raw.append((cand[-1], cref, _model_from_body(cbody)))
-        if v_att and v_att not in [a for a, _, _ in raw]:
-            raw.append((v_att, vref, v_model))  # verdict-only vertex (claim gone)
+                raw.append((cand[-1], cref,
+                            _model_from_body(cbody), _kind_from_body(cbody)))
+        if v_att and v_att not in [a for a, _, _, _ in raw]:
+            # verdict-only vertex (claim gone)
+            raw.append((v_att, vref, v_model, v_kind))
         attempts = []
-        for att, ref, model in raw:
+        for att, ref, model, kind in raw:
             attempts.append(
                 {
                     "att": att,
@@ -1989,6 +2062,7 @@ def correction_graph(origin: str) -> dict:
                         _origin_raw_strict(origin, ref)
                     ),
                     "model": model,
+                    "kind": kind,
                     "final": att == v_att,
                 }
             )

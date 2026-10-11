@@ -16,6 +16,7 @@ Hermetic: boards are local bare repos under tmp_path; the model is set via
 env; the production host is never contacted.
 """
 import importlib.util
+import json
 import pathlib
 import subprocess
 
@@ -182,3 +183,145 @@ def test_graph_unknown_fallback(monkeypatch, tmp_path):
     g = inrepo.correction_graph(o)
     atts = {a["att"]: a["model"] for a in g["tasks"]["T-unk"]["attempts"]}
     assert atts["att-w1-aaaa01"] == "unknown"
+
+
+# ------------------------------------------------------------ chain/direct flag
+
+
+def _free_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()  # now a closed port: connecting to it is refused (fast)
+    return port
+
+
+def _router_server(config, counter):
+    import http.server
+    import threading
+
+    class _H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            counter["n"] = counter.get("n", 0) + 1
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(config).encode())
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}"
+
+
+def test_kind_chain_from_router(monkeypatch):
+    inrepo = _load_inrepo()
+    cfg = {"model_list": [
+        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/a"}},
+        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/b"}},
+    ]}
+    counter = {}
+    srv, url = _router_server(cfg, counter)
+    try:
+        monkeypatch.setenv("SWARM_ROUTER_URL", url)
+        assert inrepo._model_kind("t3/tier-unistra") == "chain"
+        assert counter["n"] >= 1
+    finally:
+        srv.shutdown()
+
+
+def test_kind_direct_from_router(monkeypatch):
+    inrepo = _load_inrepo()
+    cfg = {"model_list": [
+        {"model_name": "gemini/gemini-3.5-flash",
+         "litellm_params": {"model": "gemini/gemini-3.5-flash"}},
+    ]}
+    counter = {}
+    srv, url = _router_server(cfg, counter)
+    try:
+        monkeypatch.setenv("SWARM_ROUTER_URL", url)
+        assert inrepo._model_kind("gemini/gemini-3.5-flash") == "direct"
+    finally:
+        srv.shutdown()
+
+
+def test_kind_unknown_when_router_down(monkeypatch):
+    """A dead router degrades to 'unknown' fast — never a hang, never a
+    fabricated kind."""
+    inrepo = _load_inrepo()
+    monkeypatch.setenv("SWARM_ROUTER_URL", f"http://127.0.0.1:{_free_port()}")
+    assert inrepo._model_kind("any/model") == "unknown"
+
+
+def test_kind_env_override_skips_query(monkeypatch):
+    """SWARM_MODEL_KIND is an operator assertion — it classifies without
+    touching the router at all."""
+    inrepo = _load_inrepo()
+    counter = {}
+    srv, url = _router_server({"model_list": []}, counter)
+    try:
+        monkeypatch.setenv("SWARM_ROUTER_URL", url)
+        monkeypatch.setenv("SWARM_MODEL_KIND", "chain")
+        assert inrepo._model_kind("any/model") == "chain"
+        assert counter.get("n", 0) == 0  # no router query
+    finally:
+        srv.shutdown()
+
+
+def test_kind_cached_per_model(monkeypatch):
+    """A worker handling many claims under one router pays one query, not
+    one per claim: the second call for the same model is a cache hit."""
+    inrepo = _load_inrepo()
+    cfg = {"model_list": [
+        {"model_name": "m1", "litellm_params": {"model": "openai/x"}},
+    ]}
+    counter = {}
+    srv, url = _router_server(cfg, counter)
+    try:
+        monkeypatch.setenv("SWARM_ROUTER_URL", url)
+        assert inrepo._model_kind("m1") == "direct"
+        assert inrepo._model_kind("m1") == "direct"
+        assert counter["n"] == 1  # one query for two calls
+    finally:
+        srv.shutdown()
+
+
+def test_kind_recorded_in_claim_body(monkeypatch, tmp_path):
+    """The claim body carries `kind:` after `model:`, att still last."""
+    inrepo = _load_inrepo()
+    cfg = {"model_list": [
+        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/a"}},
+        {"model_name": "t3/tier-unistra", "litellm_params": {"model": "openai/b"}},
+    ]}
+    counter = {}
+    srv, url = _router_server(cfg, counter)
+    o, w = _lane(tmp_path)
+    try:
+        monkeypatch.setenv("SWARM_ORIGIN", o)
+        monkeypatch.setenv("SWARM_MODEL", "t3/tier-unistra")
+        monkeypatch.setenv("SWARM_ROUTER_URL", url)
+        monkeypatch.chdir(w)
+        res = inrepo.claim_detail("w1", "T-k")
+        body = _body(o, "refs/swarm/claims/T-k")
+        assert "model: t3/tier-unistra" in body
+        assert "kind: chain" in body
+        assert body.strip().split()[-1] == res["att"]
+    finally:
+        srv.shutdown()
+
+
+def test_graph_renders_kind(monkeypatch, tmp_path):
+    """The graph surfaces the kind alongside the model."""
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    _push(o, w, _root_commit(w, "the brief\nverify: true"), "refs/swarm/specs/T-gk")
+    _push(o, w, _root_commit(
+        w, "claim T-gk\nmodel: m1\nkind: chain\natt-w1-aaaa01"),
+        "refs/swarm/claims/T-gk")
+    inrepo = _load_inrepo()
+    g = inrepo.correction_graph(o)
+    a = g["tasks"]["T-gk"]["attempts"][0]
+    assert a["model"] == "m1" and a["kind"] == "chain"
