@@ -581,3 +581,66 @@ def test_swarm_model_kind_asserts_without_router(monkeypatch):
         assert inrepo._model_kind(f"m-{v}") == v
     monkeypatch.setenv("SWARM_MODEL_KIND", "bogus")
     assert inrepo._model_kind("m-bogus") == "unknown"
+
+
+# ---------------------------------------------------- L5.1 checkpoint
+
+
+def test_dispatch_started_push_preserves_att_last(monkeypatch, tmp_path):
+    """L5.1: the dispatch-start push inserts a whitespace-free
+    dispatch_started token BEFORE the att (the att stays the last body
+    token, so the four att-readers — sweep/relabel/graph/audit — still
+    recover the att from the new body via split()[-1])."""
+    inrepo = _load_inrepo()
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.chdir(w)
+    res = inrepo.claim_detail("w1", "T-d")
+    att = res["att"]
+    iso = inrepo._push_dispatch_started(o, "T-d", att, "20261011T000000Z")
+    assert iso == "20261011T000000Z"
+    body = _body(o, "refs/swarm/claims/T-d")
+    assert "dispatch_started: 20261011T000000Z" in body
+    lines = [ln for ln in body.splitlines() if ln.strip()]
+    assert lines[-1].strip() == att  # att is still the last line/token
+    assert body.strip().split()[-1] == att  # and the last whitespace token
+
+
+def test_dispatch_started_resets_lease_age(monkeypatch, tmp_path):
+    """L5.1: the dispatch-start push rewrites the claim with a fresh committer
+    ts, resetting its lease age to now — a bounded run is sweep-proof. The
+    control (an aged claim with no dispatch-start push) is swept; the reset
+    claim is fresh."""
+    inrepo = _load_inrepo()
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.chdir(w)
+
+    def _aged_claim(task, att):
+        body = (f"claim {task}\nharness: opencode\n"
+                f"model: t3/unistra-coder\nkind: unknown\n{att}")
+        et = _git("-C", w, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
+        sha = subprocess.run(
+            ["git", "-C", w, "commit-tree", et, "-m", body],
+            env=dict(os.environ,
+                     GIT_COMMITTER_DATE="2000-01-01T00:00:00Z",
+                     GIT_AUTHOR_DATE="2000-01-01T00:00:00Z"),
+            capture_output=True, text=True).stdout.strip()
+        r = subprocess.run(
+            ["git", "-C", w, "push", "-q", "-f", str(o),
+             f"{sha}:refs/swarm/claims/{task}"],
+            capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+
+    _aged_claim("T-reset", "att-w1-reset01")
+    _aged_claim("T-aged", "att-w1-aged001")
+    # the dispatch-start push resets T-reset's committer ts to now
+    inrepo._push_dispatch_started(o, "T-reset", "att-w1-reset01",
+                                  "20260101T000000Z")
+    out = inrepo.reconcile(o, ttl_s=60)
+    swept = {x.get("task") for x in out["stale"]}
+    assert "T-aged" in swept, out       # the aged claim is swept
+    assert "T-reset" not in swept, out  # the reset claim is fresh
+    assert "T-reset" in out["fresh"], out

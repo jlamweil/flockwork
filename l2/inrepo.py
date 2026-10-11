@@ -179,19 +179,25 @@ def commit_tree(*args, **kw):
     return (sha or None), proc
 
 
-def push_sha_ref(sha, ref, lease=True, failed=None, origin=None):
+def push_sha_ref(sha, ref, lease=True, failed=None, origin=None, expected=None):
     """Push <sha>:<ref> with force-with-lease. A missing sha FAILS the
     push — returning the commit's own failed proc when the caller
     supplied it (real stderr preserved), else a synthetic rc-128 result.
     Spawning git with an empty refspec is forbidden: git reads it as a
-    ref DELETION and exits 0 (the phantom-verdict bug)."""
+    ref DELETION and exits 0 (the phantom-verdict bug). `expected=None` is
+    the create-once CAS (the ref must be absent); a concrete sha is the
+    update-CAS (the ref must be at that value) — the dispatch-start
+    checkpoint uses the latter to re-lease an already-living claim."""
     if not sha:
         if failed is not None:
             return failed
         return subprocess.CompletedProcess(
             args=["git", "push", ref], returncode=128,
             stdout="", stderr="no sha: commit-tree failed (push withheld)")
-    lease_arg = f"--force-with-lease={ref}:"
+    lease_arg = (
+        f"--force-with-lease={ref}:{expected}" if expected
+        else f"--force-with-lease={ref}:"
+    )
     return git("push", "-q", *( [lease_arg] if lease else [] ),
                resolve_origin(origin), f"{sha}:{ref}")
 
@@ -345,6 +351,38 @@ def _dispatch(harness: str, model: str, brief: str, tree: str):
     else:  # unreachable: the seat preflight gates the harness value
         raise ValueError(f"unknown dispatch harness: {harness}")
     return rc, round(time.monotonic() - t0, 2), err
+
+
+def _push_dispatch_started(origin: str, task: str, att: str,
+                           iso: str) -> str | None:
+    """L5.1 checkpoint: push a `dispatch_started: <iso>` marker onto the claim
+    ref so a dispatch death (or a crash mid-dispatch) is legible from the refs
+    alone. Reads the current claim body, inserts the whitespace-free ISO token
+    BEFORE the att (the att stays the last body token, so the four att-readers
+    still recover it), and CAS-pushes with force-with-lease. Best-effort: any
+    failure proceeds (the dispatch still runs) and returns None. The fresh
+    committer ts also resets the claim's lease age to now — a bounded run is
+    sweep-proof."""
+    ref = f"refs/swarm/claims/{task}"
+    raw = origin_raw(origin, ref)
+    if not raw:
+        return None
+    body = raw.partition("\n\n")[2] if raw.startswith("tree ") else raw
+    lines = body.rstrip("\n").split("\n")
+    if not lines or lines[-1].strip() != att:
+        return None  # the att must be last; an unexpected body is skipped
+    cur = (remote(ref, origin=origin).stdout or "").strip()
+    cur_sha = cur.split()[0] if cur else ""
+    if not cur_sha:
+        return None
+    lines.insert(len(lines) - 1, f"dispatch_started: {iso}")
+    c_sha, c_proc = commit_tree(empty_tree(), "-m", "\n".join(lines))
+    if not ok(c_proc):
+        return None
+    # update-CAS: lease against the sha we just read (a concurrent change
+    # fails the push -> the best-effort checkpoint is skipped, dispatch runs)
+    r = push_sha_ref(c_sha, ref, origin=origin, expected=cur_sha)
+    return iso if ok(r) else None
 
 
 _MODEL_KIND_CACHE: dict = {}
@@ -905,6 +943,14 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # model, and binary are operator-configured (SWARM_DISPATCH / SWARM_MODEL
     # / OPENCODE_BIN); SWARM_DISPATCH_TIMEOUT bounds the dispatch leg.
     harness = _dispatch_harness()
+    # L5.1 checkpoint: mark the dispatch start on the claim ref (best-effort
+    # CAS) + emit the metrics event (gated). The fresh claim committer ts
+    # resets the lease age to now — a bounded run is sweep-proof.
+    iso = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    _push_dispatch_started(origin, task, att, iso)
+    if metrics.enabled():
+        metrics.emit("dispatch_started", task=task, worker=worker, att=att,
+                     harness=harness, model=model, dispatch_started=iso)
     # oc_rc: dispatch exit code; oc_elapsed: wall-clock of the dispatch leg
     # (the bound when it timed out); oc_stderr: captured at the source so a
     # timeout (no CompletedProcess) still yields a clean empty tail.

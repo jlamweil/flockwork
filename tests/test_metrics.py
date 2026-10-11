@@ -245,7 +245,8 @@ def test_summary_counts_reject_rate_and_latency():
     s = m.summarize(_synthetic_events())
     assert s["events"] == 10 and s["malformed"] == 0
     assert s["counts"] == {"seed": 0, "claim": 4, "verdict": 2, "heir": 1,
-                           "crash": 1, "eviction": 1, "lease_expired": 1}
+                           "crash": 1, "eviction": 1, "lease_expired": 1,
+                           "dispatch_started": 0}
     assert s["claims"]["attempts"] == 4
     assert s["claims"]["won"] == 2
     assert s["claims"]["race_rejected"] == 1
@@ -261,6 +262,28 @@ def test_summary_counts_reject_rate_and_latency():
     assert s["verdicts"]["fixed_false"] == 1
     assert s["verdicts"]["push_failures"] == 0
     assert s["heirs"] == {"requeues": 1, "exhausted": 1}
+
+
+def test_dispatch_started_kind_and_harness_base(tmp_path, monkeypatch):
+    """L5.1 (M6): the dispatch_started kind is recognized by summarize
+    (counted + a summary section), and harness rides the observe_attempt base
+    onto the verdict record — the durable checkpoint's data lands in the
+    metrics stream + every attempt is harness-aware."""
+    m = _metrics()
+    monkeypatch.setenv("FLOCKWORK_METRICS", "1")
+    monkeypatch.setenv("FLOCKWORK_METRICS_FILE", str(tmp_path / "m.jsonl"))
+    m.observe_attempt({"event": "attempted", "task": "T", "worker": "w",
+                       "att": "a", "fixed": True, "model": "m",
+                       "kind": "direct", "harness": "opencode",
+                       "oc_elapsed": 5.0})
+    evs, bad = m.load(str(tmp_path / "m.jsonl"))
+    verdict = [e for e in evs if e["event"] == "verdict"][0]
+    assert verdict["harness"] == "opencode"
+    s = m.summarize(evs + [{"ts": 1.0, "event": "dispatch_started",
+                            "task": "T", "att": "a", "harness": "opencode",
+                            "dispatch_started": "20261011T000000Z"}])
+    assert s["counts"]["dispatch_started"] == 1
+    assert s["dispatch"]["dispatch_started"] == 1  # the summary section
 
 
 def test_summary_of_empty_stream_is_a_zero_board():

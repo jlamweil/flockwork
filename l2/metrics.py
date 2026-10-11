@@ -54,7 +54,7 @@ import sys
 import time
 
 KINDS = ("seed", "claim", "verdict", "heir", "crash", "eviction",
-         "lease_expired")
+         "lease_expired", "dispatch_started")
 
 
 def enabled() -> bool:
@@ -96,6 +96,7 @@ def observe_attempt(out: dict) -> None:
         # on every attempted event before this is called).
         "model": out.get("model"),
         "kind": out.get("kind"),
+        "harness": out.get("harness"),
     }
     # oc_elapsed rides only the dispatch-reaching events (absent on a
     # pre-dispatch death — the dispatch never ran), mirroring the inrepo
@@ -173,6 +174,7 @@ def summarize(events: list[dict], malformed: int = 0) -> dict:
     verdicts = {"total": 0, "fixed_true": 0, "fixed_false": 0,
                 "push_failures": 0}
     heirs = {"requeues": 0, "exhausted": 0}
+    dispatch = {"dispatch_started": 0}
     claim_ts: dict[str, float] = {}   # att -> last won-claim ts
     verdict_ts: dict[str, float] = {}  # att -> last verdict ts
     for ev in events:
@@ -207,6 +209,8 @@ def summarize(events: list[dict], malformed: int = 0) -> dict:
         elif kind == "heir":
             if ev.get("requeued") is True:
                 heirs["requeues"] += 1
+        if kind == "dispatch_started":
+            dispatch["dispatch_started"] += 1
     lats = sorted(
         verdict_ts[a] - claim_ts[a]
         for a in verdict_ts
@@ -230,6 +234,7 @@ def summarize(events: list[dict], malformed: int = 0) -> dict:
         },
         "verdicts": verdicts,
         "heirs": heirs,
+        "dispatch": dispatch,
     }
 
 
