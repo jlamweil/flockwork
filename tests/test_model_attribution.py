@@ -551,3 +551,33 @@ def test_alias_refusal_on_opencode_listing(monkeypatch, tmp_path):
     events = [json.loads(ln) for ln in r.stdout.splitlines() if ln.strip()]
     assert not [e for e in events if e.get("event") == "model_refusal"], events
     assert r.returncode == 0  # proceeded (the stub dispatched + no work done)
+
+
+# -------------------------------------------- L4 attribution coherence
+
+
+def test_kind_degrades_to_unknown_when_router_unreachable(monkeypatch):
+    """L4: a model the router cannot classify — the deployed litellm 404s
+    /model_info, so the auto-class is inert today — yields 'unknown'. The
+    model string is still recorded verbatim on the verdict body (honest:
+    we know the model, just not its chain/direct source)."""
+    inrepo = _load_inrepo()
+    monkeypatch.setenv("SWARM_ROUTER_URL", "http://127.0.0.1:1")  # refused
+    monkeypatch.delenv("SWARM_MODEL_KIND", raising=False)
+    assert inrepo._model_kind("router/some-model") == "unknown"
+    monkeypatch.setenv("SWARM_MODEL", "router/some-model")
+    assert "model: router/some-model" in inrepo.verdict_body(
+        "T", "att-w1-abcd12", True, "w1", 0, 0)
+
+
+def test_swarm_model_kind_asserts_without_router(monkeypatch):
+    """L4: SWARM_MODEL_KIND is the production source — an explicit assertion
+    is used without touching the router; a non-chain/direct value falls
+    through to the (unreachable) router and degrades to 'unknown'."""
+    inrepo = _load_inrepo()
+    monkeypatch.setenv("SWARM_ROUTER_URL", "http://127.0.0.1:1")
+    for v in ("chain", "direct"):
+        monkeypatch.setenv("SWARM_MODEL_KIND", v)
+        assert inrepo._model_kind(f"m-{v}") == v
+    monkeypatch.setenv("SWARM_MODEL_KIND", "bogus")
+    assert inrepo._model_kind("m-bogus") == "unknown"

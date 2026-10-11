@@ -178,7 +178,15 @@ tree (`SWARM_DISPATCH_TIMEOUT`, default 600 s). *`OPENCODE_BIN`* — the
 dispatch binary; default `opencode`, set it to `demo/trivial_fixer.sh`
 for the free deterministic shim. *`SWARM_MODEL`* — model id, **required**
 (no default: the worker refuses to start fail-closed, a typed
-`model_refusal`, rather than dispatch a stale id). *law-freshness gate* — workers
+`model_refusal`, rather than dispatch a stale id). *`SWARM_DISPATCH`* —
+the dispatch harness, default `opencode`; an unknown value is refused at
+the seat preflight (a typed `dispatch_refusal`). The harness is stamped on
+every attempt so attribution is harness-aware. *`SWARM_MODEL_KIND`* — the
+`chain`/`direct` flag for the dispatched model; it is the **production
+source**, because the deployed litellm 404s `/model_info` and the router
+auto-class is inert today (an unresolvable model degrades to
+`kind: unknown`; the model string is still recorded verbatim).
+*law-freshness gate* — workers
 refuse to claim when their `l2/inrepo.py` differs from origin main's
 published copy. *`SWARM_WORKER_MAX_FAILS`* — consecutive-failure
 budget (default 3) after which a worker gives up instead of spinning.
