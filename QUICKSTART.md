@@ -92,10 +92,33 @@ deterministic and free.
 **A real origin instead of the scratch board:** `export SWARM_ORIGIN`
 at any origin git can reach (e.g. an ssh bare on another host) and
 repeat steps 2–8. The scripted version accepts
-`demo/owner_test.sh --origin <URL>` for that — it will seed
-`hello-demo` on whatever you name, so name carefully. Never point
-`SWARM_ORIGIN` at an origin you don't own while experimenting.
-
-What each ref means: `docs/REFS-MODEL.md`.
+ `demo/owner_test.sh --origin <URL>` for that — it will seed
+ `hello-demo` on whatever you name, so name carefully. Never point
+ `SWARM_ORIGIN` at an origin you don't own while experimenting.
+ 
+ **Harness + model tuning:**
+ - `SWARM_DISPATCH` — the dispatch harness, default `opencode`;
+   `SWARM_DISPATCH=freebuff` uses the proven remote PTY adapter instead.
+ - `SWARM_MODEL_STRICT=1` — opt-in alias gate: refuse to dispatch a model
+   absent from the harness's model list (a stale id must not spend a dispatch).
+ - `SWARM_DISPATCH_STREAM=1` — opt-in: capture the harness's JSON event stream
+   (the default is the proven blob-capture). Both modes return the same
+   `(rc, elapsed, err)` contract.
+ - `SWARM_DISPATCH_TIMEOUT` / `SWARM_ORACLE_TIMEOUT` / `SWARM_LEASE_TTL` — the
+   dispatch bound, the oracle bound, and the claim lease. The worker warns
+   (never refuses) if dispatch + oracle + slack could exceed the lease; a slow
+   claim is flagged `aging` once it passes half the lease.
+ 
+ **Debugging (read-only, on the board's refs):**
+ - `attribution [origin]` — the per-task attempt table (model, kind, harness,
+   verdict) + `in_progress` (a live claim with no verdict yet) and
+   `interrupted` (a dispatch that started but never produced a verdict — a
+   crash mid-run). `FLOCKWORK_DEBUG=1` adds the raw claim/verdict bodies + the
+   claim's lease age.
+ - `durations [origin] [bound]` — the per-model `oc_elapsed` distribution read
+   from the verdict refs (works with the metrics layer off), flagging a
+   near-bound model that risks a timeout.
+ 
+ What each ref means: `docs/REFS-MODEL.md`.
 Never seen any of this and want the full narrative + glossary first:
 `docs/00-ORIENTATION.md`.

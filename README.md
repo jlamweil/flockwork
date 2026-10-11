@@ -45,10 +45,14 @@ a one-transaction namespace delete.
    (`push --force-with-lease=<ref>:`) to `refs/swarm/claims/<task>`.
    Git itself rejects the second claim — exactly-once is not a lock
    file, it is the ref database.
-3. **work** — the claim winner clones the origin, dispatches the brief
-   to the model, and the `verify:` line (or host pytest) judges the
-   tree. A pass lands the fix on main and points the return ref at it;
-   a fail touches nothing but the verdict.
+ 3. **work** — the claim winner clones the origin, dispatches the brief to
+    the model through the dispatch seam (`SWARM_DISPATCH`, default
+    `opencode`; `freebuff` is the proven second harness), and the `verify:`
+    line (or host pytest) judges the tree. A pass lands the fix on main and
+    points the return ref at it; a fail touches nothing but the verdict. The
+    dispatched model + harness are stamped on the attempt so attribution is
+    harness-aware, and a `dispatch_started` checkpoint is pushed at dispatch
+    start so a crash mid-run is legible from the refs.
 4. **verdict** — the attempt closes as a root commit at
    `refs/swarm/verdicts/<task>`: `fixed: true|false`, host, dispatch
    and oracle exit codes. The refs alone must separate environmental
@@ -86,16 +90,23 @@ contact, so a forgotten config can never push into a production board.
 `python3 l2/inrepo.py audit` is the board's health instrument
 (`h1_pass`: every live claim has a matching return + verdict);
 `reconcile` is the TTL backstop for stale claims; `correction-graph`
-reconstructs the multi-model attempt graph from refs alone.
+reconstructs the multi-model attempt graph from refs alone;
+`attribution` is the per-task attempt table (model, kind, harness, verdict,
+plus `in_progress`/`interrupted` for live and crashed claims); and
+`durations` reports the per-model `oc_elapsed` distribution read from the
+verdict refs, flagging a near-bound model that risks a timeout.
 
 ## Observability (opt-in, zero wire change)
 
 - `FLOCKWORK_METRICS=1` turns on a JSONL observer over the lane's own
   results; `python3 -m l2.metrics [files]` summarizes counts,
   reject-rate, and claim→verdict latency. `--dora` adds the DORA five
-  over the same stream.
+  over the same stream. The `dispatch_started` checkpoint + `harness` ride
+  the stream too.
 - `FLOCKWORK_KEEP_TREE=1` preserves a merit-failed attempt's tree so a
   failure is auditable.
+- `FLOCKWORK_DEBUG=1` on `attribution` dumps the raw claim/verdict bodies +
+  the claim's lease age (board-scoped, read-only).
 
 ## Layout
 
