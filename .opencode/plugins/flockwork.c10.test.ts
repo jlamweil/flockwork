@@ -73,11 +73,16 @@ describe("protocol injection (system.transform)", () => {
     const hooks = await Flockwork({ directory: d, client: undefined });
     const transform = (hooks as Record<string, unknown>)["experimental.chat.system.transform"] as
       (i: unknown, o: { system: string[] }) => Promise<void>;
-    const output = { system: ["base system"] };
+    const base = ["base system"];
+    const output = { system: base };
     await transform({ sessionID: "s", model: {} }, output);
-    expect(output.system.length).toBe(2);
-    expect(output.system[1]).toContain("PROTOCOL-CANONICAL-TEXT");
-    expect(output.system[1]).toContain("fw_claim");
+    // Must MUTATE the passed array in place. opencode reflects mutation, not
+    // re-assignment of output.system — re-assigning silently drops the protocol
+    // from the live prompt (live-verified 2026-10-11). Assert on the original
+    // reference so a re-assignment regression fails here.
+    expect(base.length).toBe(2);
+    expect(base[1]).toContain("PROTOCOL-CANONICAL-TEXT");
+    expect(base[1]).toContain("fw_claim");
   });
 
   test("injects nothing in a non-flockwork workspace", async () => {

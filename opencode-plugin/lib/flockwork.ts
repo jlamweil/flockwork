@@ -457,11 +457,14 @@ export const makeHooks = (directory: string, debug: (msg: string) => void) => {
     },
     // C10: append the canonical protocol to the agent's system prompt, but
     // ONLY in an active flockwork workspace (silent everywhere else).
+    // Live-verified (2026-10-11): opencode reflects MUTATION of output.system,
+    // not re-assignment — `output.system = [...output.system, proto]` silently
+    // drops the protocol from the prompt; `.push()` is the only form that lands.
     "experimental.chat.system.transform": async (_input: unknown, output: { system: string[] }) => {
       try {
         if (!active(directory)) return;
         const proto = getProtocol(directory);
-        if (proto) output.system = [...output.system, proto];
+        if (proto) output.system.push(proto);
       } catch (e) {
         warn(`system.transform error: ${e instanceof Error ? e.message : String(e)} — skipping injection`);
       }
