@@ -644,3 +644,60 @@ def test_dispatch_started_resets_lease_age(monkeypatch, tmp_path):
     assert "T-aged" in swept, out       # the aged claim is swept
     assert "T-reset" not in swept, out  # the reset claim is fresh
     assert "T-reset" in out["fresh"], out
+
+
+# ------------------------------------------------------- L5.2 + L5.3
+
+
+def test_lease_invariant_warns_on_misconfig(monkeypatch):
+    """L5.2 (M1): a worker whose dispatch+oracle+slack could exceed the lease
+    TTL is warned at start (not refused) — a run swept mid-flight is caught.
+    The defaults (600 + 600 + slack < 1800) do not warn."""
+    inrepo = _load_inrepo()
+    monkeypatch.setenv("SWARM_MODEL", "t3/unistra-coder")
+    monkeypatch.setenv("SWARM_DISPATCH_TIMEOUT", "1000")
+    monkeypatch.setenv("SWARM_ORACLE_TIMEOUT", "1000")
+    monkeypatch.setenv("SWARM_LEASE_TTL", "1800")
+    w = inrepo._lease_invariant_warn("wm")
+    assert w and w["event"] == "lease_invariant_warning", w
+    assert w["total_s"] >= 1800, w
+    monkeypatch.setenv("SWARM_DISPATCH_TIMEOUT", "600")
+    monkeypatch.setenv("SWARM_ORACLE_TIMEOUT", "600")
+    assert inrepo._lease_invariant_warn("wm") is None  # defaults are safe
+
+
+def test_attribution_reports_interrupted(monkeypatch, tmp_path):
+    """L5.3: a live claim with dispatch_started + no verdict + no archive,
+    aged past the lease bound, is reported interrupted in attribution — from
+    the origin alone (no metrics needed). A claim still within the bound is
+    not interrupted (it may still be running)."""
+    inrepo = _load_inrepo()
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    monkeypatch.setenv("SWARM_LEASE_TTL", "60")
+
+    def _claim(task, att, started, old_date):
+        extra = "\ndispatch_started: 20260101T000000Z" if started else ""
+        body = f"claim {task}\nharness: opencode{extra}\n{att}"
+        et = _git("-C", w, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
+        env = dict(os.environ)
+        if old_date:
+            env.update(GIT_COMMITTER_DATE="2000-01-01T00:00:00Z",
+                       GIT_AUTHOR_DATE="2000-01-01T00:00:00Z")
+        sha = subprocess.run(
+            ["git", "-C", w, "commit-tree", et, "-m", body],
+            env=env, capture_output=True, text=True).stdout.strip()
+        subprocess.run(
+            ["git", "-C", w, "push", "-q", "-f", str(o),
+             f"{sha}:refs/swarm/claims/{task}"],
+            capture_output=True, text=True)
+
+    for t, att, old in (("T-int", "att-w1-int0001", True),
+                        ("T-run", "att-w1-run001", False)):
+        _push(o, w, _root_commit(w, f"task {t}\nverify: true"),
+              f"refs/swarm/specs/{t}")
+        _claim(t, att, started=True, old_date=old)
+    out = inrepo.attribution(o)
+    assert "T-int" in out.get("interrupted", {}), out.get("interrupted")
+    assert out["interrupted"]["T-int"]["claim_age_s"] > 60
+    assert "T-run" not in out.get("interrupted", {}), out.get("interrupted")

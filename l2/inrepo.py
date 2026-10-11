@@ -326,6 +326,37 @@ def _model_preflight(name: str) -> bool:
     return False
 
 
+_LEASE_SLACK_S = 120
+
+
+def _lease_invariant_warn(name: str):
+    """L5.2 (M1): warn — not refuse — when the worst-case run (dispatch
+    timeout + oracle timeout + a CAS/network slack) could exceed the lease
+    TTL: a run that long is swept mid-flight (the dispatch-start checkpoint
+    only makes a *bounded* run sweep-proof). Returns the warning event (also
+    printed) on a misconfig, None when the seat is safe. The defaults
+    (600 + 600 + 120 < 1800) are safe."""
+    dispatch_t = int(os.environ.get("SWARM_DISPATCH_TIMEOUT", "600"))
+    oracle_t = int(os.environ.get("SWARM_ORACLE_TIMEOUT", "600"))
+    lease_ttl = float(os.environ.get("SWARM_LEASE_TTL", "1800"))
+    total = dispatch_t + oracle_t + _LEASE_SLACK_S
+    if total < lease_ttl:
+        return None
+    w = {
+        "event": "lease_invariant_warning",
+        "worker": name,
+        "dispatch_timeout_s": dispatch_t,
+        "oracle_timeout_s": oracle_t,
+        "lease_ttl_s": lease_ttl,
+        "total_s": total,
+        "reason": ("dispatch+oracle+slack >= lease TTL: a run this long is "
+                   "swept mid-flight; lower the timeouts or raise "
+                   "SWARM_LEASE_TTL"),
+    }
+    print(json.dumps(w), flush=True)
+    return w
+
+
 def _dispatch(harness: str, model: str, brief: str, tree: str):
     """The dispatch seam (L2): select the adapter by `harness` and run the
     brief in a scratch work tree. Returns (rc, elapsed, err) — the same
@@ -1306,6 +1337,7 @@ def worker(name: str, only: list | None = None) -> bool:
     # it touches the origin — no claim consumed, no stale default dispatched.
     if _model_preflight(name):
         return True  # honest distinct exit (CLI: exit 1)
+    _lease_invariant_warn(name)  # L5.2: warn-only, never refuses
     done = 0
     fails = 0
     claim_fails = 0
@@ -2257,7 +2289,7 @@ def attribution(origin: str | None = None) -> dict:
     origin = resolve_origin(origin)
     have = require_remote(origin)
     g = correction_graph(origin)
-    out = {"origin": origin, "tasks": {}}
+    out = {"origin": origin, "tasks": {}, "interrupted": {}}
     for t, td in g["tasks"].items():
         vref = f"refs/swarm/verdicts/{t}"
         vfields = {}
@@ -2280,6 +2312,30 @@ def attribution(origin: str | None = None) -> dict:
                 "archived": archived,
             })
         out["tasks"][t] = rows
+        # L5.3: a live claim that marks dispatch_started yet has no verdict +
+        # no archive, aged past the lease bound, is a legible crash —
+        # 'interrupted'. From the refs alone (no metrics); within the bound
+        # it may still be running, so it is not reported.
+        cref = f"refs/swarm/claims/{t}"
+        if cref in have and f"refs/swarm/verdicts/{t}" not in have:
+            cbody = _origin_body_strict(origin, cref)
+            if "dispatch_started:" in cbody:
+                live_att = cbody.strip().split()[-1]
+                if f"refs/swarm/archive/claims/{t}@{live_att}" not in have:
+                    ts = _committer_ts_from_raw(_origin_raw_strict(origin, cref))
+                    if ts is not None:
+                        age = time.time() - ts
+                        bound = float(
+                            os.environ.get("SWARM_LEASE_TTL", "1800"))
+                        if age > bound:
+                            out["interrupted"][t] = {
+                                "att": live_att,
+                                "claim_age_s": round(age, 1),
+                                "bound_s": bound,
+                                "note": ("dispatch started, no verdict, no "
+                                         "archive, past the lease bound — a "
+                                         "crash mid-run"),
+                            }
     if os.environ.get("FLOCKWORK_DEBUG", "").strip().lower() in (
             "1", "true", "yes"):
         out["debug"] = {
