@@ -106,6 +106,38 @@ def test_env_switch_appends_jsonl(monkeypatch, tmp_path):
     assert evs[1]["ts"] >= evs[0]["ts"]
 
 
+def test_observe_attempt_forwards_model_kind_and_oc_elapsed(monkeypatch, tmp_path):
+    """The model attribution rides the durable JSONL stream: observe_attempt
+    carries model/kind onto every verdict + heir event, and oc_elapsed where
+    the attempt reached dispatch — so the log is attributable without the
+    ref bodies."""
+    f = tmp_path / "m.jsonl"
+    monkeypatch.setenv("FLOCKWORK_METRICS", "1")
+    monkeypatch.setenv("FLOCKWORK_METRICS_FILE", str(f))
+    m = _metrics()
+    # a post-dispatch success: carries model + kind + oc_elapsed
+    m.observe_attempt({
+        "event": "attempted", "task": "T1", "worker": "w1",
+        "att": "att-w1-a1", "fixed": True, "oc_rc": 0, "pytest_rc": 0,
+        "oc_elapsed": 12.5, "model": "t3/unistra-coder", "kind": "direct",
+    })
+    # a pre-dispatch death requeue: model + kind, but no oc_elapsed (no dispatch)
+    m.observe_attempt({
+        "event": "attempted", "task": "T1", "worker": "w1",
+        "att": "att-w1-a2", "env_death": True, "requeued": True,
+        "model": "t3/unistra-coder", "kind": "direct",
+    })
+    evs = _read_jsonl(f)
+    verdict = [e for e in evs if e["event"] == "verdict"][0]
+    heir = [e for e in evs if e["event"] == "heir"][0]
+    assert verdict["model"] == "t3/unistra-coder"
+    assert verdict["kind"] == "direct"
+    assert verdict["oc_elapsed"] == 12.5
+    assert heir["model"] == "t3/unistra-coder"
+    assert heir["kind"] == "direct"
+    assert "oc_elapsed" not in heir  # pre-dispatch: no dispatch wall-clock
+
+
 def test_observe_only_unwritable_sink_never_propagates(monkeypatch, tmp_path):
     """A broken metrics sink must never break a lane operation: the
     layer watches, it does not participate (the acceptance bar's 'zero

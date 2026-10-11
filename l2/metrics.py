@@ -91,7 +91,16 @@ def observe_attempt(out: dict) -> None:
         "task": out.get("task"),
         "worker": out.get("worker"),
         "att": out.get("att"),
+        # the model attribution rides the durable stream too, so the JSONL
+        # log is attributable without the ref bodies (work_task stamps both
+        # on every attempted event before this is called).
+        "model": out.get("model"),
+        "kind": out.get("kind"),
     }
+    # oc_elapsed rides only the dispatch-reaching events (absent on a
+    # pre-dispatch death — the dispatch never ran), mirroring the inrepo
+    # event shape.
+    elapsed = {"oc_elapsed": out["oc_elapsed"]} if "oc_elapsed" in out else {}
     if "fixed" in out:
         emit(
             "verdict",
@@ -101,6 +110,7 @@ def observe_attempt(out: dict) -> None:
             verdict_pushed=out.get("verdict_pushed"),
             heir_exhausted=out.get("heir_exhausted"),
             env_death=out.get("env_death"),
+            **elapsed,
             **base,
         )
     if out.get("requeued") is not None:
@@ -110,6 +120,7 @@ def observe_attempt(out: dict) -> None:
             swept=out.get("swept"),
             sweep_error=out.get("sweep_error"),
             reason=out.get("reason"),
+            **elapsed,
             **base,
         )
 
