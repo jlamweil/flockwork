@@ -873,8 +873,13 @@ def test_dispatch_freebuff_routes_and_timeout(monkeypatch, tmp_path):
     def run_prompt(folder, prompt, *, takeover=False, timeout=600, **kw):
         calls["timeout"] = timeout
         calls["takeover"] = takeover
-        if "TIMEOUT" in prompt:
+        if "RAISE-TIMEOUT" in prompt:
             raise TimeoutError("timed out")
+        # the real connector signals a prompt timeout by RETURNING
+        # status="timeout" (driver.wait_idle) — with a partial-text harvest,
+        # which must NOT read as a success (rc 0).
+        if "STATUS-TIMEOUT" in prompt:
+            return {"status": "timeout", "text": "partial work"}
         return {"text": "done"} if "OK" in prompt else {}
 
     api = types.ModuleType("fbconn.api")
@@ -890,8 +895,13 @@ def test_dispatch_freebuff_routes_and_timeout(monkeypatch, tmp_path):
     assert calls["timeout"] == 77 and calls["takeover"] is True
     assert inrepo._dispatch("freebuff", "m", "FAIL brief",
                             str(tmp_path / "w"))[0] == 1  # no text -> env death
-    assert inrepo._dispatch("freebuff", "m", "TIMEOUT brief",
-                            str(tmp_path / "w"))[0] == 124  # timeout -> 124
+    # the real connector signals a timeout by RETURNING status="timeout" with
+    # a partial-text harvest -> 124 (not a success, not an env-death)
+    assert inrepo._dispatch("freebuff", "m", "STATUS-TIMEOUT brief",
+                            str(tmp_path / "w"))[0] == 124
+    # and a raised timeout (the ready-leg) maps to 124 too
+    assert inrepo._dispatch("freebuff", "m", "RAISE-TIMEOUT brief",
+                            str(tmp_path / "w"))[0] == 124
 
 
 def test_freebuff_is_a_known_harness(monkeypatch):

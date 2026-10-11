@@ -482,10 +482,23 @@ def _dispatch_freebuff(model: str, brief: str, tree: str, timeout: int):
     t0 = time.monotonic()
     try:
         fb = importlib.import_module("fbconn.api")
+        # the real connector signals a timeout by RETURNING
+        # {"status": "timeout", ...} (driver.wait_idle), not by raising —
+        # so the timeout->124 mapping keys off the status, not an exception
+        # (a partial-text harvest at the bound must not read as rc 0).
         res = fb.run_prompt(tree, brief, takeover=True, timeout=timeout)
-        rc = 0 if res and res.get("text") else 1
-        err = (res.get("err") or res.get("error") or "") if res else ""
+        status = res.get("status") if isinstance(res, dict) else None
+        if status == "timeout":
+            rc = 124
+        elif res and res.get("text"):
+            rc = 0
+        else:
+            rc = 1
+        err = (res.get("err") or res.get("error") or "") if isinstance(
+            res, dict) else ""
     except Exception as e:  # noqa: BLE001 — record, never crash (swarmo law)
+        # a raised timeout (ready-leg) is the same 124; anything else (busy
+        # instance, not authenticated, refused takeover) is an env-death.
         name = type(e).__name__.lower()
         msg = str(e).lower()
         rc = 124 if ("timeout" in name or "timed out" in msg) else 1
