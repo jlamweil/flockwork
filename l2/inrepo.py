@@ -1070,6 +1070,86 @@ def write_verdict(origin: str, task: str, att: str, fixed: bool,
                         failed=v_proc, origin=origin)
 
 
+def _brief_verify(origin: str, task: str) -> str | None:
+    """The task's oracle command (the `verify:` line) from the spec ref on the
+    origin — read directly (no tree fetch, no contamination of the caller's
+    working tree). None when the spec is absent / has no verify: (the caller
+    then falls back to host pytest via judge_tree)."""
+    raw = origin_raw(origin, f"refs/swarm/specs/{task}")
+    if not raw:
+        return None
+    body = raw.partition("\n\n")[2] if raw.startswith("tree ") else raw
+    for ln in body.splitlines():
+        if ln.startswith("verify:"):
+            return ln[len("verify:"):].strip()
+    return None
+
+
+def work_external(origin: str, task: str, att: str, tree: str, worker: str,
+                  paths: list | None = None, verify: str | None = None) -> dict:
+    """The external-work mode: the caller (an interactive agent) already did
+    the work in ITS OWN tree (not a headless dispatch clone). This lands it in
+    the substrate, reusing the separable legs: mark_work_started -> judge_tree
+    (the oracle) -> land_fix (scoped changeset + return ref) -> write_verdict
+    -> mark_work_done. Honesty preserved (the four laws hold on this path):
+      - oracle fail / timeout -> an honest fixed:false verdict, NO publish
+        (main + tasks ref untouched — the merit-fail law);
+      - rejected main push (the one rebase retry did not resolve) -> NO
+        verdict yet (the claim stays live; the caller or a fresh session
+        re-attempts, bounded by the substrate TTL+heir);
+      - no-diff (already settled) -> the return ref is pointed at main's tip,
+        an honest fixed:true.
+    `paths` is the scoped changeset (the files the caller changed); None falls
+    back to the whole tree (the headless shape) — the interactive caller
+    SHOULD pass the scoped set so unrelated dirty work + oracle artifacts are
+    never published. `verify` is the task's oracle command; None falls back to
+    the spec ref's verify:, else host pytest. Returns the structured outcome;
+    the requeue decision on a rejected push stays with the caller."""
+    origin = resolve_origin(origin)
+    mark_work_started(origin, task, att)
+    if verify is None:
+        verify = _brief_verify(origin, task)
+    jres = judge_tree(tree, task, verify)
+    pr_rc = jres["rc"]
+    oracle_timed_out = jres["timed_out"]
+    if pr_rc != 0:
+        # oracle failed (or timed out): an honest fixed:false verdict, NO
+        # publish — main + tasks ref untouched (the work completed, oc_rc 0;
+        # the oracle is the measured result).
+        write_verdict(origin, task, att, False, worker, 0, pr_rc)
+        mark_work_done(origin, task, att)
+        out = {
+            "fixed": False, "pytest_rc": pr_rc, "oc_rc": 0,
+            "main_push": False, "return_pushed": False,
+            "verdict_pushed": True, "reason": "merit_failure_no_publish",
+        }
+        if oracle_timed_out:
+            out["oracle_timeout"] = True
+        return out
+    # oracle passed: land the fix (scoped changeset + return ref).
+    land = land_fix(origin, tree, task, att, paths)
+    if not ok(land["r1"]) and not land["already_on_main"]:
+        # rejected main push the one rebase retry did not resolve: NO verdict
+        # (the claim stays live; a re-land or a fresh session re-attempts,
+        # bounded by the substrate TTL+heir). Legible via work_started.
+        mark_work_done(origin, task, att)
+        return {
+            "fixed": False, "pytest_rc": pr_rc, "oc_rc": 0,
+            "main_push": False, "return_pushed": False,
+            "verdict_pushed": False, "reason": "main_push_rejected",
+        }
+    # main landed (or the no-diff shortcut): the earned fixed:true verdict.
+    write_verdict(origin, task, att, True, worker, 0, pr_rc)
+    mark_work_done(origin, task, att)
+    return {
+        "fixed": True, "pytest_rc": pr_rc, "oc_rc": 0,
+        "main_push": ok(land["r1"]) and not land["no_diff"],
+        "already_on_main": land["already_on_main"],
+        "return_pushed": land["return_pushed"],
+        "verdict_pushed": True,
+    }
+
+
 def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # ONE origin resolved at attempt entry — clone, spec fetch,
     # main publish, return ref and every verdict push touch exactly it
