@@ -701,3 +701,80 @@ def test_attribution_reports_interrupted(monkeypatch, tmp_path):
     assert "T-int" in out.get("interrupted", {}), out.get("interrupted")
     assert out["interrupted"]["T-int"]["claim_age_s"] > 60
     assert "T-run" not in out.get("interrupted", {}), out.get("interrupted")
+
+
+# ------------------------------------------------------ L6.1 streaming
+
+
+def _json_stub(tmp_path, body, name="stream.sh"):
+    p = tmp_path / name
+    p.write_text("#!/bin/sh\n" + body + "\n")
+    p.chmod(0o755)
+    return str(p)
+
+
+def test_dispatch_streaming_success_contract(monkeypatch, tmp_path):
+    """L6.1 (B3): streaming (opt-in) returns the same (rc, elapsed, err)
+    contract — a success emits JSON events, rc 0, and an empty err (the
+    error event is absent; stderr is drained concurrently)."""
+    inrepo = _load_inrepo()
+    _git("init", "-q", "-b", "main", str(tmp_path / "w"))
+    shim = _json_stub(tmp_path,
+                      'echo \'{"type":"step_start"}\'\n'
+                      'echo \'{"type":"text","text":"hi"}\'\n'
+                      'echo \'{"type":"step_finish"}\'')
+    monkeypatch.setenv("OPENCODE_BIN", shim)
+    rc, elapsed, err = inrepo._dispatch_streaming(
+        "m", "b", str(tmp_path / "w"), 60)
+    assert rc == 0 and elapsed >= 0
+    assert err == ""  # no error event, and JSON mode leaves stderr empty
+
+
+def test_dispatch_streaming_error_event_is_the_err(monkeypatch, tmp_path):
+    """L6.1 (B3): in JSON mode stderr is empty, so oc_err comes from the
+    `error` event — a failing dispatch surfaces its error message, not an
+    empty tail (the default blob-capture would have it on stderr, but
+    streaming must still recover it)."""
+    inrepo = _load_inrepo()
+    _git("init", "-q", "-b", "main", str(tmp_path / "w"))
+    shim = _json_stub(tmp_path,
+                      'echo \'{"type":"error","message":"boom-failed"}\'\n'
+                      "exit 3")
+    monkeypatch.setenv("OPENCODE_BIN", shim)
+    rc, elapsed, err = inrepo._dispatch_streaming(
+        "m", "b", str(tmp_path / "w"), 60)
+    assert rc == 3
+    assert "boom-failed" in err
+
+
+def test_dispatch_streaming_hung_is_killed_at_bound(monkeypatch, tmp_path):
+    """L6.1 (B2): a hung backend (no output) is SIGKILL'd at the dispatch
+    bound — oc_rc=124 (the load-bearing 124⇒env_death) — not left to block
+    the worker forever (the streaming path must re-implement the SIGKILL
+    deadline the blob-capture path gets from subprocess.run's timeout)."""
+    inrepo = _load_inrepo()
+    _git("init", "-q", "-b", "main", str(tmp_path / "w"))
+    shim = _json_stub(tmp_path, 'echo \'{"type":"step_start"}\'\nsleep 30')
+    monkeypatch.setenv("OPENCODE_BIN", shim)
+    import time as _t
+    t0 = _t.monotonic()
+    rc, elapsed, _ = inrepo._dispatch_streaming(
+        "m", "b", str(tmp_path / "w"), 2)
+    assert rc == 124  # killed at the bound
+    assert _t.monotonic() - t0 < 10  # not left running for the 30s sleep
+
+
+def test_dispatch_streaming_parity_with_blob(monkeypatch, tmp_path):
+    """L6.1 (B3): the same stub yields the same rc + err under streaming and
+    blob-capture — the streaming path must not change a dispatch's meaning,
+    only how its output is captured."""
+    inrepo = _load_inrepo()
+    _git("init", "-q", "-b", "main", str(tmp_path / "w"))
+    shim = _json_stub(tmp_path, 'echo \'{"type":"error","message":"x"}\'\n'
+                                "echo boom >&2\nexit 3")
+    monkeypatch.setenv("OPENCODE_BIN", shim)
+    blob = inrepo._dispatch("opencode", "m", "b", str(tmp_path / "w"))
+    stream = inrepo._dispatch_streaming("m", "b", str(tmp_path / "w"), 60)
+    assert blob[0] == stream[0] == 3  # same rc: the dispatch meaning is unchanged
+    assert blob[2]  # blob-capture recovers the stderr tail
+    assert stream[2]  # streaming recovers the error (from the error event or stderr)

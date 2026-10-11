@@ -47,8 +47,10 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from urllib.parse import urlparse
@@ -367,14 +369,19 @@ def _dispatch(harness: str, model: str, brief: str, tree: str):
     clean empty tail instead of an unbound reference."""
     env = dict(os.environ, PWD=tree, OLDPWD=tree)
     t0 = time.monotonic()
+    timeout = int(os.environ.get("SWARM_DISPATCH_TIMEOUT", "600"))
     if harness == "opencode":
+        # Streaming is opt-in (SWARM_DISPATCH_STREAM=1); blob-capture is the
+        # proven default. Both return the same (rc, elapsed, err) contract.
+        if os.environ.get("SWARM_DISPATCH_STREAM", "") == "1":
+            return _dispatch_streaming(model, brief, tree, timeout)
         oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
         try:
             oc = sh(
                 [oc_bin, "run", "--pure", "-m", model, brief],
                 cwd=tree,
                 env=env,
-                timeout=int(os.environ.get("SWARM_DISPATCH_TIMEOUT", "600")),
+                timeout=timeout,
             )
             rc, err = oc.returncode, oc.stderr or ""
         except subprocess.TimeoutExpired:
@@ -382,6 +389,83 @@ def _dispatch(harness: str, model: str, brief: str, tree: str):
     else:  # unreachable: the seat preflight gates the harness value
         raise ValueError(f"unknown dispatch harness: {harness}")
     return rc, round(time.monotonic() - t0, 2), err
+
+
+def _dispatch_streaming(model: str, brief: str, tree: str, timeout: int):
+    """The streaming dispatch (opt-in, SWARM_DISPATCH_STREAM=1): opencode
+    --format json streams events. Returns (rc, elapsed, err) — the same
+    contract as blob-capture, only the output is captured as a stream.
+
+    B2: a hung backend is SIGKILL'd at the bound (oc_rc=124 — the load-
+    bearing 124⇒env_death). The SIGKILL deadline is re-implemented here
+    because subprocess.run's timeout covers only the blob-capture path; a
+    hung stream would otherwise block the reader forever.
+
+    B3: in JSON mode stderr is empty, so oc_err comes from the `error`
+    event; stderr is drained concurrently + byte-capped (no deadlock), and
+    the stored sinks (error events, stderr) are byte-capped."""
+    oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
+    env = dict(os.environ, PWD=tree, OLDPWD=tree)
+    t0 = time.monotonic()
+    # start_new_session: the dispatch runs in its own process group, so the
+    # SIGKILL deadline kills the harness AND its children (a hung child that
+    # inherits the pipe would otherwise hold it open past the kill).
+    proc = subprocess.Popen(
+        [oc_bin, "run", "--pure", "--format", "json", "-m", model, brief],
+        cwd=tree, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True,
+    )
+    err_events: list = []
+    stderr_parts: list = []
+    cap = 4096
+
+    def _drain_stderr():
+        for ln in proc.stderr:
+            stderr_parts.append(ln)
+            if sum(len(c) for c in stderr_parts) > cap:
+                break
+
+    err_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    err_thread.start()
+    killed = []
+
+    def _kill_group():
+        killed.append(True)
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+
+    timer = threading.Timer(timeout, _kill_group)
+    timer.start()
+    try:
+        for ln in proc.stdout:
+            s = ln.strip()
+            if not s:
+                continue
+            try:
+                ev = json.loads(s)
+            except ValueError:
+                continue
+            if ev.get("type") == "error" and len(err_events) < 8:
+                err_events.append(
+                    ev.get("message") or ev.get("error") or s)
+        proc.wait()
+    finally:
+        timer.cancel()
+    if killed:
+        _kill_group()  # ensure the group is dead (the timer may have raced)
+        proc.wait()
+        rc = 124
+    else:
+        rc = proc.returncode
+    err_thread.join(timeout=2)
+    elapsed = round(time.monotonic() - t0, 2)
+    # oc_err: the error event (JSON mode leaves stderr empty); fall back to
+    # the drained stderr tail for a non-JSON harness or a crash before the
+    # first event.
+    err = (err_events[0] if err_events else "".join(stderr_parts).strip())
+    return rc, elapsed, err[-200:]
 
 
 def _push_dispatch_started(origin: str, task: str, att: str,
