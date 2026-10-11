@@ -225,8 +225,13 @@ Step 2 — work, prove, land, settle
 Honesty rules (non-negotiable)
   - A FAILING oracle is an honest result: land what you have, write
     fixed=false, and say why. Do not weaken the verify to make it pass.
-  - The `verify` command comes from the brief (it is human-authored). Never
-    invent or loosen it; if it is missing or suspicious, ask before proceeding.
+  - The `verify` command is human-authored. When seeding a task, EXTRACT the
+    verify from the human's message — never invent or loosen it. If it is
+    missing or suspicious, ask before proceeding. Self-graded homework (you
+    write your own acceptance test) is how fake fixed:true is born.
+  - Always write fw_verdict before you stop. A task you claimed must end in a
+    verdict (fixed true or false); stopping without one leaves an orphan claim
+    that only the slow TTL+heir path resolves.
   - Never force-push. If fw_land reports a rejected push (behind main), it is a
     typed refusal — re-read main, retry ONCE, and if it still fails, stop and
     report. Do not fight the board.

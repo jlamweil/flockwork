@@ -53,3 +53,21 @@ def test_protocol_is_stable_text():
     """The protocol is deterministic (same text every call) so an injected
     system prompt is byte-stable across turns (no churn / no diff noise)."""
     assert _protocol() == _protocol()
+
+
+def test_always_verdict_before_you_stop():
+    """A claimed task must end in a verdict — the anti-orphan rule (CORR-1:
+    stopping without one leaves a claim only the slow TTL+heir path resolves)."""
+    p = _protocol()
+    assert "before you stop" in p.lower(), "the 'always fw_verdict before you stop' rule is missing"
+    # the verdict step must come before the 'before you stop' framing
+    assert p.index("fw_verdict") < p.index("before you stop")
+
+
+def test_seed_integrity_extract_not_invent():
+    """The verify is human-authored: the agent EXTRACTS it from the message,
+    never invents or loosens it (self-graded homework is the fake fixed:true
+    vector, CORR-7)."""
+    p = _protocol()
+    assert "extract" in p.lower(), "seed integrity (extract the verify) is missing"
+    assert "invent" in p.lower(), "the 'never invent the verify' rule is missing"
