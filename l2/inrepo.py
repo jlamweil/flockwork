@@ -2922,7 +2922,64 @@ def _harness_cli() -> int:
             return 2
         print(json.dumps({"dir": str(harness.ledger_dir(args[1]))}))
         return 0
-    print("usage: flockwork harness {detect|init|ledger-dir} ...",
+    if verb == "session-map":
+        if len(args) < 2:
+            print("usage: flockwork harness session-map <origin>",
+                  file=sys.stderr)
+            return 2
+        print(json.dumps(harness.session_map(args[1]), indent=1))
+        return 0
+    if verb == "session-claims":
+        if len(args) < 3:
+            print("usage: flockwork harness session-claims <origin> <session>",
+                  file=sys.stderr)
+            return 2
+        print(json.dumps(harness.session_claims(args[1], args[2]), indent=1))
+        return 0
+    if verb == "session-put":
+        if len(args) < 5:
+            print("usage: flockwork harness session-put <origin> <session> "
+                  "<task> <att>", file=sys.stderr)
+            return 2
+        harness.session_put(args[1], args[2], args[3], args[4])
+        print(json.dumps({"put": True}))
+        return 0
+    if verb == "session-drop":
+        if len(args) < 4:
+            print("usage: flockwork harness session-drop <origin> <session> "
+                  "<task>", file=sys.stderr)
+            return 2
+        harness.session_drop(args[1], args[2], args[3])
+        print(json.dumps({"drop": True}))
+        return 0
+    if verb in ("ledger-run", "ledger-gate"):
+        if len(args) < 3:
+            print(f"usage: flockwork harness {verb} <origin> <json-entry>",
+                  file=sys.stderr)
+            return 2
+        append = (harness.append_run_ledger if verb == "ledger-run"
+                  else harness.append_gate_ledger)
+        try:
+            entry = json.loads(args[2])
+        except json.JSONDecodeError as e:
+            print(f"invalid json-entry: {e}", file=sys.stderr)
+            return 2
+        session = entry.get("session", "unknown")
+        append(args[1], session, entry)
+        print(json.dumps({"appended": True}))
+        return 0
+    if verb == "read-ledger":
+        if len(args) < 3:
+            print("usage: flockwork harness read-ledger <origin> "
+                  "<run|gate>", file=sys.stderr)
+            return 2
+        read = (harness.read_run_ledger if args[2] == "run"
+                else harness.read_gate_ledger)
+        print(json.dumps(read(args[1]), indent=1))
+        return 0
+    print("usage: flockwork harness {detect|init|ledger-dir|session-map"
+          "|session-claims|session-put|session-drop|ledger-run|ledger-gate"
+          "|read-ledger} ...",
           file=sys.stderr)
     return 2
 
