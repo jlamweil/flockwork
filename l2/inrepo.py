@@ -2895,6 +2895,38 @@ def run_timeline(task: str, origin: str | None = None) -> dict:
     return out
 
 
+def _harness_cli() -> int:
+    """Drive the harness substrate from the CLI (the plugin shells here too):
+    `flockwork harness {detect|init|ledger-dir} ...`. The policy lives in
+    l2/harness.py; this is the thin argv->module bridge."""
+    import l2.harness as harness
+    args = sys.argv[2:]
+    verb = args[0] if args else ""
+    if verb == "detect":
+        d = args[1] if len(args) > 1 else os.getcwd()
+        print(json.dumps({"active": harness.active(d),
+                          "origin": harness.origin_of(d)}))
+        return 0
+    if verb == "init":
+        if len(args) < 3:
+            print("usage: flockwork harness init <dir> <origin>",
+                  file=sys.stderr)
+            return 2
+        out = harness.bootstrap(args[1], args[2])
+        print(json.dumps(out))
+        return 0 if "refused" not in out else 1
+    if verb == "ledger-dir":
+        if len(args) < 2:
+            print("usage: flockwork harness ledger-dir <origin>",
+                  file=sys.stderr)
+            return 2
+        print(json.dumps({"dir": str(harness.ledger_dir(args[1]))}))
+        return 0
+    print("usage: flockwork harness {detect|init|ledger-dir} ...",
+          file=sys.stderr)
+    return 2
+
+
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "audit"
     if mode == "seed":
@@ -3052,6 +3084,8 @@ def main() -> None:
                             sys.argv[4], _worker_name(), sys.argv[5:] or None)
         print(json.dumps(out, indent=1))
         sys.exit(0 if out.get("fixed") else 1)
+    elif mode == "harness":
+        sys.exit(_harness_cli())
     else:
         print(
             f"unknown mode: {mode}\n"

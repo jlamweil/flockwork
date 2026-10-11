@@ -16,3 +16,7 @@ venv/
 
 # flockwork runtime artifacts (never commit a live board or kept attempts)
 kept-attempts/
+
+# local harness marker (per-operator origin declaration, written by
+# `flockwork harness init`); the .opencode/ plugin is repo content and stays
+.flockwork/
