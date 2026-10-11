@@ -551,6 +551,12 @@ def work_task(worker: str, task: str, att: str) -> dict:
     tree = tempfile_tree(task)
     try:
         out = _work_task(worker, task, att, tree)
+        # The dispatched model + its chain/direct flag on EVERY attempted
+        # event (all emitters return through here) — read at attempt entry,
+        # so even a pre-dispatch death reports which model the seat ran.
+        model = _swarm_model()
+        out["model"] = model
+        out["kind"] = _model_kind(model) if model.strip() else "unknown"
         # metrics (observe-only): the attempt's judged outcome
         # (verdict) and any requeue decision (heir) as the event carries
         # them — recorded after the fact, never instead of the return.
@@ -566,6 +572,10 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # main publish, return ref and every verdict push touch exactly it
     # (the import-time split-brain class is dead).
     origin = resolve_origin()
+    # The dispatched model (operator-configured via SWARM_MODEL), read at
+    # attempt entry for the dispatch leg. work_task stamps model + kind on
+    # the returned event for every emitter.
+    model = _swarm_model()
     r = git("clone", "-q", origin, tree)
     if not ok(r):
         # The one-heir budget gates the CLONE leg exactly as it gates
@@ -794,9 +804,9 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # own git root, $PWD pin). The model + binary are
     # operator-configured via SWARM_MODEL / OPENCODE_BIN.
     oc_rc = 0
-    model = _swarm_model()
     oc_bin = os.environ.get("OPENCODE_BIN", "opencode")
     env = dict(os.environ, PWD=tree, OLDPWD=tree)
+    oc_t0 = time.monotonic()
     try:
         # SWARM_DISPATCH_TIMEOUT: model-size must fit task-size; a pro
         # model on a contract test needs >420s (large-model timing)
@@ -809,6 +819,10 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         oc_rc = oc.returncode
     except subprocess.TimeoutExpired:
         oc_rc = 124
+    # oc_elapsed: wall-clock of the dispatch leg — the bound when it timed
+    # out (the TimeoutExpired branch yields the same delta). A slow
+    # dispatch is now visible at the checkpoint.
+    oc_elapsed = round(time.monotonic() - oc_t0, 2)
     # The classification, BEFORE any ref is written: an environmental
     # death is a dispatch that failed leaving no work in the tree
     # (124=timeout counts even with partial work — partial orphan work
@@ -832,6 +846,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "task": task,
                 "att": att,
                 "oc_rc": oc_rc,
+                "oc_elapsed": oc_elapsed,
                 "env_death": True,
                 "requeued": False,
                 "swept": None,
@@ -845,6 +860,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "task": task,
                 "att": att,
                 "oc_rc": oc_rc,
+                "oc_elapsed": oc_elapsed,
                 "env_death": True,
             }
             if sweep_err is None:
@@ -879,6 +895,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "fixed": False,
             "pytest_rc": 1,
             "oc_rc": oc_rc,
+            "oc_elapsed": oc_elapsed,
             "oc_err": "",
             "env_death": True,
             "heir_exhausted": True,
@@ -949,6 +966,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "fixed": False,
             "pytest_rc": pr.returncode,
             "oc_rc": oc_rc,
+            "oc_elapsed": oc_elapsed,
             "oc_err": "",
             "env_death": False,
             "heir_exhausted": False,
@@ -1035,6 +1053,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "fixed": False,
                 "pytest_rc": pr.returncode,
                 "oc_rc": oc_rc,
+                "oc_elapsed": oc_elapsed,
                 "oc_err": "",
                 "env_death": False,
                 "heir_exhausted": False,
@@ -1056,6 +1075,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "fixed": False,
                 "pytest_rc": pr.returncode,
                 "oc_rc": oc_rc,
+                "oc_elapsed": oc_elapsed,
                 "oc_err": "",
                 "env_death": False,
                 "heir_exhausted": False,
@@ -1119,6 +1139,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         "fixed": fixed,
         "pytest_rc": pr.returncode,
         "oc_rc": oc_rc,
+        "oc_elapsed": oc_elapsed,
         "oc_err": oc_err,
         "env_death": env_death,
         "heir_exhausted": env_death,
@@ -2088,6 +2109,59 @@ def correction_graph(origin: str) -> dict:
     return G
 
 
+def attribution(origin: str | None = None) -> dict:
+    """Read-only model-attribution table per task — the debugging entry
+    point for 'is this board's attribution correct?'. Same law as
+    correction_graph: ls-remote + origin object reads, never a ref write.
+    Per task, a flat row per attempt:
+      att | model | kind | verdict(fixed/oc_rc/pytest_rc) | archived | host.
+    The verdict fields are read from the task's verdict body (the final
+    attempt's; None for non-final attempts). FLOCKWORK_DEBUG=1 adds the raw
+    claim/verdict bodies so a misfiled vertex is explainable without
+    mutation (the derivation is body `model:` -> `kind:`, both read straight
+    off the ref body by _model_from_body / _kind_from_body)."""
+    origin = resolve_origin(origin)
+    have = require_remote(origin)
+    g = correction_graph(origin)
+    out = {"origin": origin, "tasks": {}}
+    for t, td in g["tasks"].items():
+        vref = f"refs/swarm/verdicts/{t}"
+        vfields = {}
+        if vref in have:
+            for ln in _origin_body_strict(origin, vref).splitlines():
+                k, _, val = ln.partition(":")
+                vfields[k.strip()] = val.strip()
+        rows = []
+        for a in td["attempts"]:
+            final = a["final"] and a["att"] == td.get("verdict_att")
+            archived = f"refs/swarm/archive/claims/{t}@{a['att']}" in have
+            rows.append({
+                "att": a["att"],
+                "model": a["model"],
+                "kind": a["kind"],
+                "fixed": vfields.get("fixed") if final else None,
+                "oc_rc": vfields.get("oc_rc") if final else None,
+                "pytest_rc": vfields.get("pytest_rc") if final else None,
+                "host": vfields.get("host") if final else None,
+                "archived": archived,
+            })
+        out["tasks"][t] = rows
+    if os.environ.get("FLOCKWORK_DEBUG", "").strip().lower() in (
+            "1", "true", "yes"):
+        out["debug"] = {
+            t: {
+                "claim_body": _origin_body_strict(
+                    origin, f"refs/swarm/claims/{t}")
+                if f"refs/swarm/claims/{t}" in have else None,
+                "verdict_body": _origin_body_strict(
+                    origin, f"refs/swarm/verdicts/{t}")
+                if f"refs/swarm/verdicts/{t}" in have else None,
+            }
+            for t in out["tasks"]
+        }
+    return out
+
+
 # ------------------------------------------------ verdict-count gate CLI
 # The gate module (l2/gates.py) becomes reachable through the law's
 # single CLI surface. THIN delegation only — the module owns the
@@ -2163,6 +2237,14 @@ def main() -> None:
     elif mode == "correction-graph":
         print(json.dumps(
             correction_graph(
+                sys.argv[2] if len(sys.argv) > 2
+                else resolve_origin()
+            ),
+            indent=1,
+        ))
+    elif mode == "attribution":
+        print(json.dumps(
+            attribution(
                 sys.argv[2] if len(sys.argv) > 2
                 else resolve_origin()
             ),

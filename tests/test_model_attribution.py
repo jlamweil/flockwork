@@ -17,8 +17,10 @@ env; the production host is never contacted.
 """
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -64,7 +66,29 @@ def _lane(tmp_path):
     (w / "f.txt").write_text("x\n")
     _git("-C", str(w), "add", "-A")
     _git("-C", str(w), *_cid(), "commit", "-qm", "s")
+    _git("-C", str(w), *_cid(), "push", "-q", str(o), "main")
     return str(o), str(w)
+
+
+SUB_DRIVER = """
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location('inrepo', 'l2/inrepo.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+try:
+    print(json.dumps(m.work_task(sys.argv[1], sys.argv[2], sys.argv[3])))
+except Exception as e:
+    print(json.dumps({'event': 'driver_exception', 'type': type(e).__name__}))
+"""
+
+
+def _run_work_task(env_extra, task, att, worker="w2"):
+    env = dict(os.environ, **env_extra)
+    r = subprocess.run(
+        [sys.executable, "-c", SUB_DRIVER, worker, task, att],
+        cwd=REPO, capture_output=True, text=True, env=env, timeout=300,
+    )
+    assert r.returncode == 0, r.stderr[-400:]
+    return json.loads(r.stdout.strip().splitlines()[-1])
 
 
 # ------------------------------------------------------------ write-side
@@ -325,3 +349,70 @@ def test_graph_renders_kind(monkeypatch, tmp_path):
     g = inrepo.correction_graph(o)
     a = g["tasks"]["T-gk"]["attempts"][0]
     assert a["model"] == "m1" and a["kind"] == "chain"
+
+
+# ------------------------------------------------------------ debuggability
+
+
+def test_pre_dispatch_death_carries_model_kind(tmp_path):
+    """A pre-dispatch death (spec-fetch-failed) still reports the seat's
+    model + kind — you can tell which model a seat was running when it died
+    before doing work. No oc_elapsed (the dispatch never ran)."""
+    o, w = _lane(tmp_path)
+    att = "att-w2-nd0001"
+    _push(o, w, _root_commit(w, f"claim T-nd {att}"), "refs/swarm/claims/T-nd")
+    ev = _run_work_task(
+        dict(SWARM_ORIGIN=o, SWARM_MODEL="t3/unistra-coder",
+             SWARM_MODEL_KIND="direct", SWARM_HEIR_MAX="1"),
+        "T-nd", att)
+    assert ev.get("event") != "driver_exception", ev
+    assert ev.get("env_death") is True
+    assert ev["model"] == "t3/unistra-coder"
+    assert ev["kind"] == "direct"
+    assert "oc_elapsed" not in ev
+
+
+def test_dispatch_event_carries_model_kind_oc_elapsed(tmp_path):
+    """A dispatch-reaching event carries model + kind + the introduced
+    oc_elapsed (wall-clock around the dispatch)."""
+    o, w = _lane(tmp_path)
+    stub = tmp_path / "stub-opencode"
+    stub.write_text("#!/bin/bash\nsleep 0.2\ntouch work.txt\nexit 0\n")
+    stub.chmod(0o755)
+    TASK = "T-disp"
+    _push(o, w, _root_commit(w, "do it\nverify: true"), f"refs/swarm/specs/{TASK}")
+    att = "att-w2-ds0001"
+    _push(o, w, _root_commit(w, f"claim {TASK} {att}"), f"refs/swarm/claims/{TASK}")
+    ev = _run_work_task(
+        dict(SWARM_ORIGIN=o, OPENCODE_BIN=str(stub), SWARM_MODEL="t3/unistra-coder",
+             SWARM_MODEL_KIND="direct", SWARM_HEIR_MAX="1",
+             SWARM_DISPATCH_TIMEOUT="30"),
+        TASK, att)
+    assert ev.get("event") != "driver_exception", ev
+    assert ev["model"] == "t3/unistra-coder"
+    assert ev["kind"] == "direct"
+    assert isinstance(ev.get("oc_elapsed"), (int, float)) and ev["oc_elapsed"] >= 0
+
+
+def test_attribution_output_shape(monkeypatch, tmp_path):
+    """The read-only attribution diagnostic: per task, a flat table of
+    att | model | kind | verdict(fixed/oc_rc/pytest_rc) | archived | host."""
+    o, w = _lane(tmp_path)
+    monkeypatch.setenv("SWARM_ORIGIN", o)
+    _push(o, w, _root_commit(w, "the brief\nverify: true"), "refs/swarm/specs/T-a")
+    _push(o, w, _root_commit(
+        w, "claim T-a\nmodel: t3/unistra-coder\nkind: direct\natt-w1-aaaa01"),
+        "refs/swarm/claims/T-a")
+    _push(o, w, _root_commit(
+        w, "verdict\ntask: T-a\nattempt: att-w1-aaaa01\nfixed: true\n"
+           "host: w1\noc_rc: 0\npytest_rc: 0\nmodel: t3/unistra-coder\n"
+           "kind: direct"),
+        "refs/swarm/verdicts/T-a")
+    inrepo = _load_inrepo()
+    out = inrepo.attribution(o)
+    row = out["tasks"]["T-a"][0]
+    for k in ("att", "model", "kind", "fixed", "oc_rc", "pytest_rc",
+              "host", "archived"):
+        assert k in row, (k, row)
+    assert row["model"] == "t3/unistra-coder" and row["kind"] == "direct"
+    assert row["fixed"] == "true" and row["host"] == "w1"

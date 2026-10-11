@@ -269,11 +269,14 @@ def test_claim_on_well_formed_spec_is_byte_identical(tmp_path, monkeypatch):
     assert len(attempted) == 1
     assert attempted[0]["fixed"] is True
     assert not any("schema" in k for k in attempted[0])
-    # the landed success shape, pinned key for key: the schema adds none
+    # the landed success shape, pinned key for key: the schema adds none.
+    # (model/kind/oc_elapsed come from the model-attribution feature, not
+    # the schema — every attempted event carries them.)
     assert sorted(attempted[0].keys()) == sorted(
         ["event", "worker", "task", "att", "fixed", "pytest_rc", "oc_rc",
-         "oc_err", "env_death", "heir_exhausted", "main_push",
-         "already_on_main", "return_pushed", "verdict_pushed"])
+         "oc_elapsed", "oc_err", "env_death", "heir_exhausted", "main_push",
+         "already_on_main", "return_pushed", "verdict_pushed", "model",
+         "kind"])
 
 
 def test_lone_law_without_schema_sibling_claims_unvalidated(
