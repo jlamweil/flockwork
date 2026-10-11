@@ -2977,9 +2977,14 @@ def _harness_cli() -> int:
                 else harness.read_gate_ledger)
         print(json.dumps(read(args[1]), indent=1))
         return 0
+    if verb == "protocol":
+        # the canonical 2-step protocol, from the substrate (one source of
+        # truth): the plugin injects this; the skill + docs reference it.
+        print(harness.protocol())
+        return 0
     print("usage: flockwork harness {detect|init|ledger-dir|session-map"
           "|session-claims|session-put|session-drop|ledger-run|ledger-gate"
-          "|read-ledger} ...",
+          "|read-ledger|protocol} ...",
           file=sys.stderr)
     return 2
 

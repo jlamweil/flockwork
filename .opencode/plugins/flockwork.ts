@@ -112,6 +112,36 @@ export const runFw = (
   }
 };
 
+// ------------------------------------------------------- protocol injection
+//
+// The canonical 2-step protocol lives in the substrate (l2/harness.py) as the
+// single source of truth. We fetch it from the CLI (so the injected text can
+// never drift from the skill/docs) and cache it (it is static +
+// system.transform fires on every message). If the CLI cannot run we fall back
+// to a minimal embedded note (we do NOT cache the fallback, so a later
+// successful fetch overrides it).
+
+export const FALLBACK_PROTOCOL =
+  "flockwork board detected but the protocol could not be loaded from the " +
+  "substrate; follow the 2-step loop: fw_brief -> fw_claim, then work -> " +
+  "fw_judge -> fw_land -> fw_verdict -> fw_work_done. A failing oracle is an " +
+  "honest fixed=false, not an error; never force-push.";
+
+let protocolCache: string | null = null;
+export const _resetProtocolCache = (): void => {
+  protocolCache = null;
+};
+
+export const getProtocol = (directory: string): string | null => {
+  if (protocolCache) return protocolCache;
+  const res = runFw(directory, ["harness", "protocol"], FW_DEFAULT_TIMEOUT_MS);
+  if (res && res.status === 0 && (res.stdout ?? "").trim()) {
+    protocolCache = res.stdout!.trim();
+    return protocolCache;
+  }
+  return FALLBACK_PROTOCOL;
+};
+
 // ---------------------------------------------------------- the fw_* tools
 //
 // Each is a thin shell-out to a substrate CLI verb (the policy lives in
@@ -350,12 +380,22 @@ export const Flockwork: Plugin = async ({ directory, client }) => {
 
   debug(`plugin loaded; active=${active(directory)}`);
 
-  // C9: register the fw_* tools. C10 (protocol) + C11 (idle backstop) attach
-  // their hooks alongside.
+  // C9 (tools) + C10 (protocol injection) + C11 (idle backstop) attach here.
   return {
     tool: fwTools,
     "chat.message": async (input) => {
       captureModel(input.sessionID, input.model?.modelID);
+    },
+    // C10: append the canonical protocol to the agent's system prompt, but
+    // ONLY in an active flockwork workspace (silent everywhere else).
+    "experimental.chat.system.transform": async (_input, output) => {
+      try {
+        if (!active(directory)) return;
+        const proto = getProtocol(directory);
+        if (proto) output.system = [...output.system, proto];
+      } catch (e) {
+        warn(`system.transform error: ${e instanceof Error ? e.message : String(e)} — skipping injection`);
+      }
     },
   };
 };

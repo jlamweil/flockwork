@@ -191,3 +191,50 @@ def session_drop(origin: str, session: str, task: str) -> None:
     else:
         m[session] = sess
     _write_session_map(origin, m)
+
+
+# ------------------------------------------------------- canonical protocol
+#
+# The single source of truth for the 2-step swarm protocol. The plugin injects
+# it into the agent's system prompt (C10); the /flockwork skill (C13) and the
+# docs reference it, so every surface teaches the SAME loop. It is
+# deterministic (byte-stable across turns — a churn-free system prompt).
+
+PROTOCOL = """\
+You are working a task on a flockwork swarm board. Follow this exact ordered
+protocol. The `fw_*` tools are the ONLY way to touch the board; the board (git
+refs) is the durable truth — never assume state from the conversation alone.
+
+Step 1 — understand, then claim
+  1. fw_brief <task>      read the brief: what to do + the `verify` command.
+  2. fw_claim <task>      take the lease; you get back an `att` (this attempt).
+     If the claim fails (already claimed / rejected), STOP and say so — do not
+     retry blindly.
+
+Step 2 — work, prove, land, settle
+  3. fw_work_started <task> <att>   checkpoint that work has begun.
+  4. Make the change in the working tree (edit the files you need to).
+  5. fw_judge <task> <tree>         run the verify command (the oracle). THIS
+     MAY BLOCK FOR MINUTES — it is the merit leg, not an error to avoid.
+  6. fw_land <task> <att> <tree> [paths...]
+     commit ONLY the files you changed and push the scoped fix + return ref.
+  7. fw_verdict <task> <att> <fixed> <oc_rc> <pytest_rc> [oc_elapsed]
+     the terminal, create-once verdict (exactly once).
+  8. fw_work_done <task> <att>      checkpoint that work is complete.
+
+Honesty rules (non-negotiable)
+  - A FAILING oracle is an honest result: land what you have, write
+    fixed=false, and say why. Do not weaken the verify to make it pass.
+  - The `verify` command comes from the brief (it is human-authored). Never
+    invent or loosen it; if it is missing or suspicious, ask before proceeding.
+  - Never force-push. If fw_land reports a rejected push (behind main), it is a
+    typed refusal — re-read main, retry ONCE, and if it still fails, stop and
+    report. Do not fight the board.
+  - During long work, periodically call fw_renew <task> <att> so your lease is
+    not reaped as stale.
+"""
+
+
+def protocol() -> str:
+    """The canonical 2-step protocol (see PROTOCOL). Deterministic."""
+    return PROTOCOL
