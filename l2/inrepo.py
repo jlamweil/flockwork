@@ -908,6 +908,79 @@ def judge_tree(tree: str, task: str, verify: str | None, timeout: int | None = N
     }
 
 
+def land_fix(origin: str, tree: str, task: str, att: str,
+             paths: list | None = None) -> dict:
+    """Land a verified fix in `tree`: commit the changeset (the scoped
+    `paths`, or the whole tree when paths is None — the headless fresh-clone
+    shape), push main (with one bounded rebase retry on a collision), and
+    push the return ref. Returns the structured land outcome — main_pushed,
+    already_on_main (the no-diff shortcut), return_pushed, plus no_diff/tip
+    and the raw push procs — and does NOT decide requeue/verdict; that is
+    the caller's classification (a failed main push requeues in the worker
+    loop, heir-bounded).
+
+    `paths` is the interactive-tree contract (CORR-2): the headless path
+    passes None (its tree is a fresh clone, so `add -A` is exactly the
+    dispatch's output); the external-work mode passes the task's scoped
+    changeset, so an unrelated dirty file in the human's worktree and any
+    oracle side-effect artifacts (.pytest_cache / __pycache__) are never
+    published under the fix commit.
+
+    The tip comes from the tree's own view of origin/main
+    (refs/remotes/origin/main, fetched at clone time — the sha comes from
+    the tree's own records, never a fresh remote read): deterministic,
+    locally resolvable, and the honest "as verified by this attempt" tip.
+    """
+    if paths:
+        git("-C", tree, "add", *paths)
+    else:
+        git("-C", tree, "add", "-A")
+    no_diff = git("-C", tree, "status", "--porcelain").stdout.strip() == ""
+    tip = None
+    if no_diff:
+        r1 = subprocess.CompletedProcess(
+            args=["git", "push"], returncode=0, stdout="",
+            stderr="(no-diff) main untouched; no commit created",
+        )
+        rv = git("-C", tree, "rev-parse", "refs/remotes/origin/main")
+        cand = rv.stdout.strip()
+        if ok(rv) and cand:
+            tip = cand
+    else:
+        git("-C", tree, "commit", "-q", "--allow-empty",
+            "-m", f"fix {task}\n\nAttempt: {att}")
+        r1 = git("-C", tree, "push", "-q", origin, "HEAD:main")
+    if not ok(r1):
+        rr = git("-C", tree, "pull", "-q", "--rebase", origin, "main")
+        if ok(rr):
+            r1 = git("-C", tree, "push", "-q", origin, "HEAD:main")
+    if not ok(r1):
+        # main push failed (a collision the one rebase retry did not
+        # resolve) → the caller decides requeue/verdict; nothing lands.
+        return {
+            "main_pushed": False, "already_on_main": no_diff,
+            "return_pushed": False, "no_diff": no_diff, "tip": tip,
+            "r1": r1, "r2": None,
+        }
+    # main landed (or the no-diff shortcut): push the return ref.
+    lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
+    if no_diff and not tip:
+        r2 = subprocess.CompletedProcess(
+            args=["git", "push"], returncode=128, stdout="",
+            stderr="no main tip on origin: return ref withheld",
+        )
+    else:
+        src = tip if tip is not None else "HEAD"
+        r2 = git("-C", tree, "push", "-q", lease, origin,
+                 f"{src}:refs/swarm/tasks/{task}")
+    return {
+        "main_pushed": ok(r1) and not no_diff,
+        "already_on_main": no_diff,
+        "return_pushed": r2 is not None and ok(r2),
+        "no_diff": no_diff, "tip": tip, "r1": r1, "r2": r2,
+    }
+
+
 def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # ONE origin resolved at attempt entry — clone, spec fetch,
     # main publish, return ref and every verdict push touch exactly it
@@ -1301,56 +1374,17 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         if oracle_timed_out:
             out["oracle_timeout"] = True
         return out
-    # return commit on main lineage with the att trailer; concurrent
-    # workers push main too — on non-FF, rebase onto origin and retry
-    # (reached only when the oracle PASSED — the publish is earned)
-    git("-C", tree, "add", "-A")
-    # The oracle may PASS on an unchanged tree. The rediscovered SETTLED
-    # task shape (fixed:true verdict whose return ref was lost;
-    # reconcile's TTL re-lease freed the claim) re-runs with the fix
-    # ALREADY on main, and any oracle-true no-op attempt lands here too.
-    # The old unconditional --allow-empty commit published a NEW empty
-    # "fix" commit to main: the substrate-lie class (main claiming a
-    # fix the tree never had) reopened through the re-lease route.
-    # Never CREATE a commit in this shape: main already satisfies the
-    # task's success criterion, so the return ref is pointed at main's
-    # tip and the verdict records the attempt honestly.
-    # The tip comes from the attempt's OWN clone
-    # (refs/remotes/origin/main, fetched at clone time — the sha comes
-    # from the worker's own records, never a fresh remote read). The
-    # first cut ls-remote'd main and pushed that sha from the clone,
-    # which never fetched it: when main advanced during the attempt (a
-    # concurrent rediscoverer), the return push failed (`not our ref`),
-    # return_pushed came back false for work that IS on main, and the
-    # settled task re-entered the re-lease treadmill. The clone's view
-    # is deterministic, locally resolvable, and the honest "as verified
-    # by this attempt" tip.
-    no_diff = git("-C", tree, "status", "--porcelain").stdout.strip() == ""
-    tip = None
-    if no_diff:
-        r1 = subprocess.CompletedProcess(
-            args=["git", "push"], returncode=0, stdout="",
-            stderr="(no-diff oracle pass) main untouched; no commit created",
-        )
-        rv = git("-C", tree, "rev-parse", "refs/remotes/origin/main")
-        cand = rv.stdout.strip()
-        if ok(rv) and cand:
-            tip = cand
-    else:
-        git(
-            "-C",
-            tree,
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            f"fix {task}\n\nAttempt: {att}",
-        )
-        r1 = git("-C", tree, "push", "-q", origin, "HEAD:main")
-    if not ok(r1):
-        rr = git("-C", tree, "pull", "-q", "--rebase", origin, "main")
-        if ok(rr):
-            r1 = git("-C", tree, "push", "-q", origin, "HEAD:main")
+    # Land the verified fix (commit + push main + one bounded rebase retry
+    # + the return ref) — extracted into land_fix. The headless path passes
+    # paths=None (its tree is a fresh clone, so `add -A` is exactly the
+    # dispatch's output); the no-diff (settled) shortcut and the
+    # tip-from-the-tree's-own-view logic live inside land_fix. Reached only
+    # when the oracle PASSED — the publish is earned.
+    land = land_fix(origin, tree, task, att)
+    no_diff = land["no_diff"]
+    tip = land["tip"]
+    r1 = land["r1"]
+    r2 = land["r2"]
     if not ok(r1):
         # the lane's product is main: a fix that never landed is never
         # a fix, whatever the oracle says (the collision was seen
@@ -1410,32 +1444,12 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             ev["reason"] = "main_push_rejected"
             return ev
         fixed = False  # heirs exhausted: final honest verdict below
-    if fixed:
-        lease = f"--force-with-lease=refs/swarm/tasks/{task}:"
-        if no_diff and not tip:
-            # no resolvable main tip in the attempt's view (origin main
-            # absent/unborn at clone): withhold the return ref — never
-            # an empty-refspec push (the phantom-deletion class
-            # push_sha_ref guards).
-            r2 = subprocess.CompletedProcess(
-                args=["git", "push"], returncode=128, stdout="",
-                stderr="no main tip on origin: return ref withheld",
-            )
-        else:
-            src = tip if tip is not None else "HEAD"
-            r2 = git(
-                "-C", tree, "push", "-q", lease, origin,
-                f"{src}:refs/swarm/tasks/{task}",
-            )
-    else:
-        # Heirs exhausted on a rejected main push → ONLY the final
-        # honest verdict. The tasks ref is a RETURN: advancing it with
-        # content main contradicts beside a fixed:false verdict is the
-        # substrate-lie shape the merit-fail and heir-exhausted
-        # env-death paths never commit. The live claim keeps the task
-        # out of open_tasks; reconcile's TTL may re-lease it later —
-        # oracle-passing work legitimately retries on a fresh lease.
-        r2 = None
+    # The return ref (r2) was pushed by land_fix when main landed; on a
+    # rejected main push it was withheld there — the tasks ref is a RETURN:
+    # advancing it with content main contradicts beside a fixed:false
+    # verdict is the substrate-lie shape the merit-fail and heir-exhausted
+    # env-death paths never commit. The live claim keeps the task out of
+    # open_tasks; reconcile's TTL may re-lease it later.
     # L1 verdict: ROOT commit
     et = empty_tree()
     v_sha, v_proc = commit_tree(
