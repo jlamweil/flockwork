@@ -878,6 +878,36 @@ def work_task(worker: str, task: str, att: str) -> dict:
         shutil.rmtree(tree, ignore_errors=True)
 
 
+def judge_tree(tree: str, task: str, verify: str | None, timeout: int | None = None) -> dict:
+    """Run the task's oracle in `tree`: the brief's `verify:` command if
+    present, else host pytest at the task dir (first dir under tasks/, else
+    the tree root). Bounded by `timeout` (default SWARM_ORACLE_TIMEOUT,
+    600s) via coreutils `timeout`, so a hung verify (a network wait, an
+    interactive prompt, an infinite loop in the fixed code) degrades to an
+    honest measured rc 124 instead of sitting the worker down for the full
+    floor or leaking a TimeoutExpired out. Returns the RAW measured result
+    — rc, timed_out (rc==124: the leg's own bound, not a measured exit),
+    and a detail tail — and does NOT apply the env-death gate; that
+    classification is the caller's."""
+    if timeout is None:
+        timeout = int(os.environ.get("SWARM_ORACLE_TIMEOUT", "600"))
+    if verify:
+        pr = sh(["timeout", str(timeout), "bash", "-lc", verify], cwd=tree)
+    else:
+        tdir = os.path.join(tree, "tasks", task)
+        if not os.path.isdir(tdir):
+            tdir = tree
+        pr = sh(
+            ["timeout", str(timeout), sys.executable, "-m", "pytest", "-q"],
+            cwd=tdir,
+        )
+    return {
+        "rc": pr.returncode,
+        "timed_out": pr.returncode == 124,
+        "detail": ((pr.stderr or "") + (pr.stdout or ""))[-400:],
+    }
+
+
 def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     # ONE origin resolved at attempt entry — clone, spec fetch,
     # main publish, return ref and every verdict push touch exactly it
@@ -1210,35 +1240,17 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "swept": None,
             "reason": "heir_exhausted_env_death",
         }
-    # L4 oracle: task-specified verify command, else host pytest in the
-    # task dir (first dir under tasks/). bash -lc so the host's pyenv
-    # pytest resolves. The oracle leg carries its own bound —
-    # SWARM_ORACLE_TIMEOUT (default 600s) — enforced with coreutils
-    # `timeout` around the verify command, so a hung verify (a network
-    # wait, an interactive prompt, an infinite loop in the fixed code)
-    # degrades to an honest measured result (rc 124) instead of sitting
-    # the worker down for the full floor or leaking a TimeoutExpired out
-    # of _work_task into the catch-all, which would misclassify a
-    # completed dispatch as a failed one.
-    oracle_timeout = int(os.environ.get("SWARM_ORACLE_TIMEOUT", "600"))
-    if verify:
-        pr = sh(["timeout", str(oracle_timeout), "bash", "-lc", verify], cwd=tree)
-    else:
-        tdir = os.path.join(tree, "tasks", task)
-        if not os.path.isdir(tdir):
-            tdir = tree
-        pr = sh(
-            ["timeout", str(oracle_timeout), sys.executable, "-m", "pytest", "-q"],
-            cwd=tdir,
-        )
-    # rc 124 is coreutils `timeout`'s verdict on the leg's own bound: the
-    # verify command died at the oracle timeout, not a measured exit. The
-    # flag marks exactly that shape (present only there — healthy rows
-    # carry no oracle_timeout key).
-    oracle_timed_out = pr.returncode == 124
+    # L4 oracle: the task's verify command (else host pytest at the task
+    # dir), run in the tree + bounded — extracted into judge_tree. A hung
+    # verify degrades to an honest measured rc 124 (the leg's own bound),
+    # not a leaked TimeoutExpired; the flag marks exactly that shape
+    # (present only there — healthy rows carry no oracle_timeout key).
+    jres = judge_tree(tree, task, verify)
+    pr_rc = jres["rc"]
+    oracle_timed_out = jres["timed_out"]
     # an environmental death is never a fix, whatever the oracle says
     # (heir-exhausted path: the oracle may pass on an unchanged tree)
-    fixed = pr.returncode == 0 and not env_death
+    fixed = pr_rc == 0 and not env_death
     if not fixed:
         # A change that FAILS its oracle is never a fix and never
         # lands. Publishing used to be unconditional — a merit failure
@@ -1256,7 +1268,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         kept, kept_err = (None, None)
         if keep_tree_enabled():
             kept, kept_err = keep_attempt_tree(task, att, tree)
-        v_body = verdict_body(task, att, False, worker, oc_rc, pr.returncode,
+        v_body = verdict_body(task, att, False, worker, oc_rc, pr_rc,
                               oc_elapsed)
         if kept:
             v_body += f"\nkept: {kept}"
@@ -1269,7 +1281,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
             "task": task,
             "att": att,
             "fixed": False,
-            "pytest_rc": pr.returncode,
+            "pytest_rc": pr_rc,
             "oc_rc": oc_rc,
             "oc_elapsed": oc_elapsed,
             "oc_err": "",
@@ -1356,7 +1368,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "task": task,
                 "att": att,
                 "fixed": False,
-                "pytest_rc": pr.returncode,
+                "pytest_rc": pr_rc,
                 "oc_rc": oc_rc,
                 "oc_elapsed": oc_elapsed,
                 "oc_err": "",
@@ -1378,7 +1390,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
                 "task": task,
                 "att": att,
                 "fixed": False,
-                "pytest_rc": pr.returncode,
+                "pytest_rc": pr_rc,
                 "oc_rc": oc_rc,
                 "oc_elapsed": oc_elapsed,
                 "oc_err": "",
@@ -1428,7 +1440,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
     et = empty_tree()
     v_sha, v_proc = commit_tree(
         et,
-        "-m", verdict_body(task, att, fixed, worker, oc_rc, pr.returncode,
+        "-m", verdict_body(task, att, fixed, worker, oc_rc, pr_rc,
                            oc_elapsed)
     )
     r3 = push_sha_ref(v_sha, f"refs/swarm/verdicts/{task}", failed=v_proc, origin=origin)
@@ -1441,7 +1453,7 @@ def _work_task(worker: str, task: str, att: str, tree: str) -> dict:
         "task": task,
         "att": att,
         "fixed": fixed,
-        "pytest_rc": pr.returncode,
+        "pytest_rc": pr_rc,
         "oc_rc": oc_rc,
         "oc_elapsed": oc_elapsed,
         "oc_err": oc_err,
