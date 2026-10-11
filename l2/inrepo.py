@@ -1122,7 +1122,14 @@ def work_external(origin: str, task: str, att: str, tree: str, worker: str,
     SHOULD pass the scoped set so unrelated dirty work + oracle artifacts are
     never published. `verify` is the task's oracle command; None falls back to
     the spec ref's verify:, else host pytest. Returns the structured outcome;
-    the requeue decision on a rejected push stays with the caller."""
+    the requeue decision on a rejected push stays with the caller.
+
+    Law boundary (C8'): this is an operator/plugin-initiated path and does NOT
+    run the headless worker's law_gate — a fresh interactive session re-claims
+    under the current law. The headless `worker` loop, by contrast, refuses a
+    diverged law (law_gate): so deploying the external-work mode on a board
+    requires re-publishing this law file to origin main + re-provisioning the
+    headless workers, though the external-work verbs work regardless."""
     origin = resolve_origin(origin)
     mark_work_started(origin, task, att)
     if verify is None:
