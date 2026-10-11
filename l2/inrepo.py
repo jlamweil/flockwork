@@ -518,6 +518,20 @@ def _push_dispatch_started(origin: str, task: str, att: str,
     failure proceeds (the dispatch still runs) and returns None. The fresh
     committer ts also resets the claim's lease age to now — a bounded run is
     sweep-proof."""
+    return iso if _push_claim_marker(
+        origin, task, att, f"dispatch_started: {iso}") is not None else None
+
+
+def _push_claim_marker(origin: str, task: str, att: str,
+                       line: str | None) -> str | None:
+    """Insert `line` BEFORE the att on the claim ref (the att stays the LAST
+    body token — every att reader extracts it via split()[-1]) and CAS-push
+    with force-with-lease. `line=None` re-commits the body unchanged for a
+    fresh committer ts — the lease renewal. Best-effort / conflict-tolerant:
+    the att must already be the last token (a swept/taken-over claim is
+    skipped, never overwritten) and a concurrent change fails the update-CAS
+    push, in which case the marker is skipped (returns None) and the caller
+    proceeds. Returns the marker line on success, None otherwise."""
     ref = f"refs/swarm/claims/{task}"
     raw = origin_raw(origin, ref)
     if not raw:
@@ -530,14 +544,69 @@ def _push_dispatch_started(origin: str, task: str, att: str,
     cur_sha = cur.split()[0] if cur else ""
     if not cur_sha:
         return None
-    lines.insert(len(lines) - 1, f"dispatch_started: {iso}")
+    if line is not None:
+        lines.insert(len(lines) - 1, line)
     c_sha, c_proc = commit_tree(empty_tree(), "-m", "\n".join(lines))
     if not ok(c_proc):
         return None
     # update-CAS: lease against the sha we just read (a concurrent change
-    # fails the push -> the best-effort checkpoint is skipped, dispatch runs)
+    # fails the push -> the best-effort checkpoint is skipped, work runs on).
+    # Returns the new claim sha on success (truthy; the caller can read the
+    # advanced ref), None on refusal — so a caller can tell a skip from a
+    # success without re-reading.
     r = push_sha_ref(c_sha, ref, origin=origin, expected=cur_sha)
-    return iso if ok(r) else None
+    return c_sha if ok(r) else None
+
+
+def mark_work_started(origin: str, task: str, att: str) -> str | None:
+    """External-work checkpoint: mark that the (caller's-tree) work leg began.
+    Legible from the refs alone; a fresh committer ts also resets the claim's
+    lease age (a bounded run is sweep-proof). Idempotent by prefix — a second
+    call while work_started is already present is a no-op."""
+    iso = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    ref = f"refs/swarm/claims/{task}"
+    raw = origin_raw(origin, ref)
+    body = raw.partition("\n\n")[2] if (raw and raw.startswith("tree ")) else raw
+    if body and any(ln.strip().startswith("work_started:")
+                    for ln in body.split("\n")):
+        return "work_started:"  # already marked
+    return _push_claim_marker(origin, task, att, f"work_started: {iso}")
+
+
+def mark_work_done(origin: str, task: str, att: str) -> str | None:
+    """External-work checkpoint: mark that the work leg finished (before
+    judge/land/verdict). Idempotent by prefix, like mark_work_started."""
+    iso = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    ref = f"refs/swarm/claims/{task}"
+    raw = origin_raw(origin, ref)
+    body = raw.partition("\n\n")[2] if (raw and raw.startswith("tree ")) else raw
+    if body and any(ln.strip().startswith("work_done:")
+                    for ln in body.split("\n")):
+        return "work_done:"  # already marked
+    return _push_claim_marker(origin, task, att, f"work_done: {iso}")
+
+
+def renew_claim(origin: str, task: str, att: str) -> str | None:
+    """Re-lease a live claim the caller still owns: re-commit the body
+    unchanged for a fresh committer ts (the lease age resets to now) +
+    update-CAS push. A wrong att (the claim was swept/taken over) is refused —
+    the att must be the last body token. Returns "" on success, None on
+    refusal (best-effort; the caller proceeds on None, a fresh session can
+    re-claim after the TTL)."""
+    return _push_claim_marker(origin, task, att, None)
+
+
+def live_claim_att(origin: str, task: str) -> str | None:
+    """The live claim's att (the last body token) or None when no claim /
+    unreadable. The plugin compares its recorded att against this on its next
+    tool call; a mismatch means the claim was swept or taken over
+    (claim_lost — legible, not silent)."""
+    raw = origin_raw(origin, f"refs/swarm/claims/{task}")
+    if not raw:
+        return None
+    body = raw.partition("\n\n")[2] if raw.startswith("tree ") else raw
+    lines = body.rstrip("\n").split("\n")
+    return lines[-1].strip() if lines else None
 
 
 def _claim_age_s(origin: str, cref: str) -> float | None:
@@ -2497,7 +2566,12 @@ def attribution(origin: str | None = None) -> dict:
             bound = float(os.environ.get("SWARM_LEASE_TTL", "1800"))
             if ts is not None:
                 age = time.time() - ts
-                started = "dispatch_started:" in cbody
+                # dispatch (headless) or work (external-work) started: both
+                # are legible "work began" markers (CORR-6 — the external-work
+                # path marks work_started, so a stale work claim is legible
+                # as interrupted, not silently aged out).
+                started = ("dispatch_started:" in cbody
+                           or "work_started:" in cbody)
                 archived = f"refs/swarm/archive/claims/{t}@{live_att}" in have
                 if age <= bound:
                     out["in_progress"][t] = {
@@ -2505,15 +2579,16 @@ def attribution(origin: str | None = None) -> dict:
                         "status": "no_verdict_yet",
                         "claim_age_s": round(age, 1),
                         "bound_s": bound,
-                        "dispatch_started": started,
+                        "work_started": started,
                     }
                 elif started and not archived:
                     out["interrupted"][t] = {
                         "att": live_att,
                         "claim_age_s": round(age, 1),
                         "bound_s": bound,
-                        "note": ("dispatch started, no verdict, no archive, "
-                                 "past the lease bound — a crash mid-run"),
+                        "note": ("work started, no verdict, no archive, "
+                                 "past the lease bound — a crash/stall "
+                                 "mid-run"),
                     }
     if os.environ.get("FLOCKWORK_DEBUG", "").strip().lower() in (
             "1", "true", "yes"):
