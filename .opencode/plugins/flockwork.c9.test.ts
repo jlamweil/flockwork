@@ -94,10 +94,10 @@ describe("fw_claim", () => {
   });
 
   test("passes the model + harness on the spawn env (replayable verdicts)", async () => {
-    captureModel("sess-1", "router/t3/unistra-coder");
+    captureModel("sess-1", "router/demo/model-x");
     await fwTools.fw_claim.execute({ task: "T1" }, ctx());
     const logged = readFileSync(log, "utf8");
-    expect(logged).toContain("MODEL=router/t3/unistra-coder HOST=opencode");
+    expect(logged).toContain("MODEL=router/demo/model-x HOST=opencode");
   });
 
   test("a lost claim is a typed refusal and records NOTHING", async () => {
