@@ -21,6 +21,7 @@ The interactive-tree contracts (CORR-2) this pins:
 import importlib.util
 import pathlib
 import subprocess
+import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
@@ -30,6 +31,16 @@ def _load_inrepo():
         "inrepo", REPO / "l2" / "inrepo.py"
     )
     m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def _load_landgate():
+    spec = importlib.util.spec_from_file_location(
+        "landgate", REPO / "l2" / "landgate.py"
+    )
+    m = importlib.util.module_from_spec(spec)
+    sys.modules["landgate"] = m
     spec.loader.exec_module(m)
     return m
 
@@ -162,3 +173,42 @@ def test_land_fix_behind_main_honest_refusal(tmp_path):
     assert f"refs/swarm/tasks/T" not in _refs(o)
     chk = _fresh_main(o, tmp_path, "chk")
     assert (chk / "f.txt").read_text() == "v3\n"  # fix not published
+
+
+def test_land_fix_gate_on_valid_token_publishes(tmp_path, monkeypatch):
+    """With the landgate ON + a valid presented token, land_fix proceeds
+    exactly as pre-gate (the land leg is auth-only; merit is enforced
+    upstream by the oracle)."""
+    g = _load_landgate()
+    m = _load_inrepo()
+    o = _make_origin(tmp_path)
+    w = _clone(o, tmp_path)
+    (w / "fix.py").write_text("x = 1\n")
+    tok = g.sign_token("owner", "agent-1", "landgate-secret")
+    monkeypatch.setenv("FLOCKWORK_LAND_GATE", "1")
+    monkeypatch.setenv("FLOCKWORK_LAND_SECRET", "landgate-secret")
+    r = m.land_fix(o, str(w), "T", "att-g1", gate_token=tok)
+    assert r["main_pushed"] is True
+    assert "gate_denied" not in r
+    assert f"refs/swarm/tasks/T" in _refs(o)
+
+
+def test_land_fix_gate_on_forged_token_publishes_nothing(tmp_path, monkeypatch):
+    """With the landgate ON + a forged presented token, land_fix publishes
+    NOTHING and returns an honest gate_denied marker — main keeps its tip,
+    no return ref (the publish seam is gated, not just the verdict)."""
+    m = _load_inrepo()
+    o = _make_origin(tmp_path)
+    w = _clone(o, tmp_path)
+    (w / "fix.py").write_text("x = 1\n")
+    main_before = _git("-C", str(w), "rev-parse", "main").stdout.strip()
+    monkeypatch.setenv("FLOCKWORK_LAND_GATE", "1")
+    monkeypatch.setenv("FLOCKWORK_LAND_SECRET", "landgate-secret")
+    r = m.land_fix(o, str(w), "T", "att-g2",
+                   gate_token="owner:a:999999999999:deadbeef")
+    assert r["main_pushed"] is False
+    assert r["return_pushed"] is False
+    assert r.get("gate_denied")
+    assert f"refs/swarm/tasks/T" not in _refs(o)
+    main_after = _git("-C", str(w), "rev-parse", "main").stdout.strip()
+    assert main_before == main_after  # main did not advance

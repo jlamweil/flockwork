@@ -996,7 +996,8 @@ def judge_tree(tree: str, task: str, verify: str | None, timeout: int | None = N
 
 
 def land_fix(origin: str, tree: str, task: str, att: str,
-             paths: list | None = None) -> dict:
+             paths: list | None = None,
+             gate_token: str | None = None) -> dict:
     """Land a verified fix in `tree`: commit the changeset (the scoped
     `paths`, or the whole tree when paths is None — the headless fresh-clone
     shape), push main (with one bounded rebase retry on a collision), and
@@ -1016,8 +1017,19 @@ def land_fix(origin: str, tree: str, task: str, att: str,
     The tip comes from the tree's own view of origin/main
     (refs/remotes/origin/main, fetched at clone time — the sha comes from
     the tree's own records, never a fresh remote read): deterministic,
-    locally resolvable, and the honest "as verified by this attempt" tip.
+      locally resolvable, and the honest "as verified by this attempt" tip.
     """
+    gurl = os.environ.get("FLOCKWORK_LAND_GATE_URL", "").strip()
+    if gurl:
+        return _land_via_host(gurl, origin, tree, task, att, paths,
+                              gate_token)
+    g = _gate_verdict(False, None, gate_token, action="land")
+    if g is not None:
+        return {
+            "main_pushed": False, "already_on_main": False,
+            "return_pushed": False, "no_diff": False, "tip": None,
+            "gate_denied": g["reason"], "r1": None, "r2": None,
+        }
     if paths:
         git("-C", tree, "add", *paths)
     else:
@@ -1068,9 +1080,111 @@ def land_fix(origin: str, tree: str, task: str, att: str,
     }
 
 
+def _gate_verdict(fixed=False, oracle_rc=None, gate_token=None,
+                  action="settle"):
+    """Shared env-gated settle/land gate (the P3/F3 authorization leg).
+    OFF by default (no ``FLOCKWORK_LAND_GATE``): returns None — proceed — so
+    the pre-gate law is byte-identical (the existing suite is untouched).
+    When ON it fail-closes on the l2/landgate settle check and returns a
+    denial dict ``{allowed: False, role, reason}``; a passing check returns
+    None to proceed. ``gate_token`` (presented by the seat) is preferred over
+    ``$FLOCKWORK_LAND_TOKEN``; the secret is read server-side from
+    ``$FLOCKWORK_LAND_SECRET``, never presented by the worker. ``oracle_rc``
+    is the verify/oracle rc (write_verdict's pytest_rc); the land leg passes
+    None (merit is enforced upstream by the oracle in work_external). An ON
+    gate whose module is absent (a lone-copy lawgate) is refused, never a
+    success-shaped no-op (the mutating-op law)."""
+    if os.environ.get("FLOCKWORK_LAND_GATE", "").strip() not in \
+            ("1", "true", "yes", "on"):
+        return None
+    try:
+        import landgate
+    except ImportError:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import landgate
+        except ImportError:
+            return {"allowed": False, "role": "<gate>",
+                    "reason": "gate enabled but l2/landgate.py absent "
+                              "(fail-closed)"}
+    token = gate_token if gate_token is not None \
+        else os.environ.get("FLOCKWORK_LAND_TOKEN", "")
+    secret = os.environ.get("FLOCKWORK_LAND_SECRET", "")
+    v = landgate.settle_check(token, secret, fixed=fixed,
+                              oracle_rc=oracle_rc, action=action)
+    if v.allowed:
+        return None
+    return {"allowed": False, "role": v.role, "reason": v.reason}
+
+
+def _settle_via_host(url: str, origin, task, att, fixed, oracle_rc,
+                     gate_token, worker) -> subprocess.CompletedProcess:
+    """Gate-host mode (the un-bypassable cutover): delegate the authoritative
+    settle to the gate host, which holds the secret + does the privileged
+    push. Returns a proc reflecting the host's outcome — rc 0 settled, rc 2
+    denied or unreachable (fail-closed). The agent's own token here is
+    scoped: it CANNOT write a verdict / advance main directly, so this
+    delegation (or a protected-ref refusal) is what a tampered client hits."""
+    import urllib.request
+    token = gate_token if gate_token is not None \
+        else os.environ.get("FLOCKWORK_LAND_TOKEN", "")
+    payload = json.dumps({"origin": origin, "task": task, "att": att,
+                          "fixed": fixed, "oracle_rc": oracle_rc,
+                          "token": token, "worker": worker}).encode()
+    req = urllib.request.Request(
+        url.rstrip("/") + "/settle", data=payload,
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            out = json.loads(resp.read() or b"{}")
+    except Exception as e:  # noqa: BLE001 — unreachable host is a refuse
+        return subprocess.CompletedProcess(
+            args=["gate-host"], returncode=2, stdout="",
+            stderr=f"gate host unreachable (fail-closed): {e}")
+    if out.get("settled"):
+        return subprocess.CompletedProcess(
+            args=["gate-host"], returncode=0, stdout=json.dumps(out),
+            stderr="")
+    return subprocess.CompletedProcess(
+        args=["gate-host"], returncode=2, stdout=json.dumps(out),
+        stderr=f"gate host refused the settle: {out.get('reason')}")
+
+
+def _land_via_host(url: str, origin, tree, task, att, paths,
+                   gate_token) -> dict:
+    """Gate-host mode: delegate the authoritative land (privileged push) to
+    the gate host. Returns the host's land outcome dict, or an honest
+    ``gate_denied`` / ``gate host unreachable`` marker (fail-closed)."""
+    import urllib.request
+    token = gate_token if gate_token is not None \
+        else os.environ.get("FLOCKWORK_LAND_TOKEN", "")
+    payload = json.dumps({"origin": origin, "tree": tree, "task": task,
+                          "att": att, "paths": paths, "token": token}).encode()
+    req = urllib.request.Request(
+        url.rstrip("/") + "/land", data=payload,
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            out = json.loads(resp.read() or b"{}")
+    except Exception as e:  # noqa: BLE001 — fail-closed
+        return {"main_pushed": False, "already_on_main": False,
+                "return_pushed": False, "no_diff": False, "tip": None,
+                "gate_denied": f"gate host unreachable (fail-closed): {e}",
+                "r1": None, "r2": None}
+    if not out.get("landed"):
+        reason = (out.get("reason")
+                  or (out.get("out") or {}).get("gate_denied")
+                  or "gate host refused the land")
+        return {"main_pushed": False, "already_on_main": False,
+                "return_pushed": False, "no_diff": False, "tip": None,
+                "gate_denied": reason, "r1": None, "r2": None}
+    return out.get("out") or {}
+
+
 def write_verdict(origin: str, task: str, att: str, fixed: bool,
                   worker: str, oc_rc: int, pytest_rc: int,
-                  oc_elapsed: float | None = None, extra: str = ""):
+                  oc_elapsed: float | None = None, extra: str = "",
+                  gate_token: str | None = None):
     """Write the create-once terminal verdict for an attempt: a ROOT commit
     (L1 — never on main lineage) carrying verdict_body(...) (+ `extra`, e.g.
     the keep-tree path), pushed to refs/swarm/verdicts/<task> with the
@@ -1078,7 +1192,18 @@ def write_verdict(origin: str, task: str, att: str, fixed: bool,
     the phantom-verdict class: git reads an empty refspec as a ref deletion
     and exits 0). Returns the push proc; the caller reads ok(r) for
     verdict_pushed. Create-once (the ref must be absent) — a second write for
-    the same task is rejected."""
+    the         same task is rejected."""
+    gurl = os.environ.get("FLOCKWORK_LAND_GATE_URL", "").strip()
+    if gurl:
+        return _settle_via_host(gurl, origin, task, att, fixed, pytest_rc,
+                                gate_token, worker)
+    g = _gate_verdict(fixed, pytest_rc, gate_token, action="settle")
+    if g is not None:
+        return subprocess.CompletedProcess(
+            args=["landgate"], returncode=2,
+            stdout=json.dumps(g),
+            stderr=f"settle gate denied: {g['reason']} (role={g['role']})",
+        )
     body = verdict_body(task, att, fixed, worker, oc_rc, pytest_rc, oc_elapsed)
     if extra:
         body += extra
@@ -1122,7 +1247,8 @@ def _worker_name() -> str:
 
 
 def work_external(origin: str, task: str, att: str, tree: str, worker: str,
-                  paths: list | None = None, verify: str | None = None) -> dict:
+                  paths: list | None = None, verify: str | None = None,
+                  gate_token: str | None = None) -> dict:
     """The external-work mode: the caller (an interactive agent) already did
     the work in ITS OWN tree (not a headless dispatch clone). This lands it in
     the substrate, reusing the separable legs: mark_work_started -> judge_tree
@@ -1159,7 +1285,8 @@ def work_external(origin: str, task: str, att: str, tree: str, worker: str,
         # oracle failed (or timed out): an honest fixed:false verdict, NO
         # publish — main + tasks ref untouched (the work completed, oc_rc 0;
         # the oracle is the measured result).
-        write_verdict(origin, task, att, False, worker, 0, pr_rc)
+        write_verdict(origin, task, att, False, worker, 0, pr_rc,
+                      gate_token=gate_token)
         mark_work_done(origin, task, att)
         out = {
             "fixed": False, "pytest_rc": pr_rc, "oc_rc": 0,
@@ -1170,7 +1297,16 @@ def work_external(origin: str, task: str, att: str, tree: str, worker: str,
             out["oracle_timeout"] = True
         return out
     # oracle passed: land the fix (scoped changeset + return ref).
-    land = land_fix(origin, tree, task, att, paths)
+    land = land_fix(origin, tree, task, att, paths, gate_token=gate_token)
+    if land.get("gate_denied"):
+        # the landgate refused the publish (unauthorized): NO verdict, the
+        # claim stays live for a re-attempt (legible via reason).
+        mark_work_done(origin, task, att)
+        return {
+            "fixed": False, "pytest_rc": pr_rc, "oc_rc": 0,
+            "main_push": False, "return_pushed": False,
+            "verdict_pushed": False, "reason": "land_gate_denied",
+        }
     if not ok(land["r1"]) and not land["already_on_main"]:
         # rejected main push the one rebase retry did not resolve: NO verdict
         # (the claim stays live; a re-land or a fresh session re-attempts,
@@ -1182,7 +1318,8 @@ def work_external(origin: str, task: str, att: str, tree: str, worker: str,
             "verdict_pushed": False, "reason": "main_push_rejected",
         }
     # main landed (or the no-diff shortcut): the earned fixed:true verdict.
-    write_verdict(origin, task, att, True, worker, 0, pr_rc)
+    write_verdict(origin, task, att, True, worker, 0, pr_rc,
+                  gate_token=gate_token)
     mark_work_done(origin, task, att)
     return {
         "fixed": True, "pytest_rc": pr_rc, "oc_rc": 0,

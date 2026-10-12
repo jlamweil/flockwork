@@ -161,7 +161,8 @@ def _board_ops(name: str, args: dict, origin: str, task: str, inrepo) -> dict:
         if not (att and tree):
             return _fail("att and tree are required for fw_land")
         paths = args.get("paths") or None
-        out = inrepo.land_fix(origin, tree, task, att, paths)
+        out = inrepo.land_fix(origin, tree, task, att, paths,
+                              gate_token=args.get("token"))
         okd = out.get("main_pushed") or out.get("already_on_main")
         text = (f"land {'succeeded' if okd else 'failed'} "
                 f"(main_pushed={out.get('main_pushed')} "
@@ -178,7 +179,8 @@ def _board_ops(name: str, args: dict, origin: str, task: str, inrepo) -> dict:
         oc_elapsed = args.get("oc_elapsed")
         worker = args.get("worker") or inrepo._worker_name()
         r = inrepo.write_verdict(origin, task, att, fixed, worker, oc_rc,
-                                 pytest_rc, oc_elapsed)
+                                 pytest_rc, oc_elapsed,
+                                 gate_token=args.get("token"))
         okd = inrepo.ok(r)
         return _ok(f"verdict written: {task} fixed={fixed}") if okd \
             else _fail(f"verdict NOT written for {task} (create-once refusal)")
@@ -201,7 +203,8 @@ def _board_ops(name: str, args: dict, origin: str, task: str, inrepo) -> dict:
         worker = args.get("worker") or inrepo._worker_name()
         out = inrepo.work_external(origin, task, att, tree, worker,
                                    args.get("paths") or None,
-                                   args.get("verify"))
+                                   args.get("verify"),
+                                   gate_token=args.get("token"))
         return _ok(f"work_external fixed={out.get('fixed')}\n"
                    f"{json.dumps(out, indent=1)}") if out.get("fixed") \
             else _fail(f"work_external fixed={out.get('fixed')}\n"
@@ -228,6 +231,10 @@ _HARNESS = {"type": "string",
                            "codex, claude, ...); stamped on the refs for "
                            "replayable attribution (defaults to the MCP "
                            "client identity, else 'unknown')"}
+_TOKEN = {"type": "string",
+          "description": "the settle/land gate token (server-signed "
+                         "role:subject:expires:sig); presented to pass the "
+                         "landgate when FLOCKWORK_LAND_GATE is on"}
 
 TOOLS: list = [
     _tool("fw_protocol", "Print the canonical 2-step swarm protocol.",
@@ -250,17 +257,17 @@ TOOLS: list = [
           ["task", "tree"]),
     _tool("fw_land", "Land the scoped fix: commit the files changed, push to "
           "board main, push the return ref.",
-          {"origin": _ORIGIN, "task": _TASK, "att": _ATT, "tree": _TREE,
-           "paths": _PATHS},
-          ["origin", "task", "att", "tree"]),
+           {"origin": _ORIGIN, "task": _TASK, "att": _ATT, "tree": _TREE,
+            "paths": _PATHS, "token": _TOKEN},
+           ["origin", "task", "att", "tree"]),
      _tool("fw_verdict", "Write the terminal create-once verdict (fixed true/"
           "false + rcs + elapsed). Exactly once per claim.",
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT,
            "fixed": {"type": "boolean"}, "oc_rc": {"type": "integer"},
            "pytest_rc": {"type": "integer"},
-           "oc_elapsed": {"type": "number"},
-           "harness": _HARNESS},
-          ["origin", "task", "att", "fixed", "oc_rc", "pytest_rc"]),
+            "oc_elapsed": {"type": "number"},
+            "harness": _HARNESS, "token": _TOKEN},
+           ["origin", "task", "att", "fixed", "oc_rc", "pytest_rc"]),
     _tool("fw_renew", "Renew the lease on a claimed task (long work).",
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT},
           ["origin", "task", "att"]),
@@ -274,9 +281,9 @@ TOOLS: list = [
           "(work_started -> judge -> land -> verdict -> work_done).",
           {"origin": _ORIGIN, "task": _TASK, "att": _ATT, "tree": _TREE,
            "paths": _PATHS,
-           "verify": {"type": "string", "description": "override the verify"},
-           "harness": _HARNESS},
-          ["origin", "task", "att", "tree"]),
+            "verify": {"type": "string", "description": "override the verify"},
+            "harness": _HARNESS, "token": _TOKEN},
+           ["origin", "task", "att", "tree"]),
 ]
 
 

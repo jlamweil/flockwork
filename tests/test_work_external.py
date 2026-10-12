@@ -11,6 +11,7 @@ C4b pins the failure matrix (the four honesty laws on the new path).
 import importlib.util
 import pathlib
 import subprocess
+import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
@@ -20,6 +21,16 @@ def _load_inrepo():
         "inrepo", REPO / "l2" / "inrepo.py"
     )
     m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def _load_landgate():
+    spec = importlib.util.spec_from_file_location(
+        "landgate", REPO / "l2" / "landgate.py"
+    )
+    m = importlib.util.module_from_spec(spec)
+    sys.modules["landgate"] = m
     spec.loader.exec_module(m)
     return m
 
@@ -191,3 +202,39 @@ def test_work_external_no_diff_is_settled(tmp_path):
     _git("clone", "-q", "-b", "main", o, str(b1))
     main_after = _git("-C", str(b1), "rev-parse", "main").stdout.strip()
     assert main_before == main_after  # main did not advance
+
+
+def test_work_external_gate_on_valid_token_lands(tmp_path, monkeypatch):
+    """work_external threads the presented token through BOTH legs: with a
+    valid token + a passing oracle, the fix lands on main and the create-once
+    verdict is written."""
+    g = _load_landgate()
+    m = _load_inrepo()
+    o, w, att = _work_lane(tmp_path)
+    (w / "fix.py").write_text("x = 1\n")
+    tok = g.sign_token("owner", "agent-1", "extsecret")
+    monkeypatch.setenv("FLOCKWORK_LAND_GATE", "1")
+    monkeypatch.setenv("FLOCKWORK_LAND_SECRET", "extsecret")
+    out = m.work_external(o, "T", att, str(w), "w1", paths=["fix.py"],
+                          gate_token=tok)
+    assert out["fixed"] is True
+    assert out["verdict_pushed"] is True
+    assert f"refs/swarm/verdicts/T" in _refs(o)
+
+
+def test_work_external_gate_on_forged_token_writes_no_verdict(tmp_path, monkeypatch):
+    """With a forged presented token the land leg is refused, so the full
+    external-work leg lands NOTHING and writes NO verdict (publish + settle
+    are both gated; the claim stays live for a re-attempt)."""
+    m = _load_inrepo()
+    o, w, att = _work_lane(tmp_path)
+    (w / "fix.py").write_text("x = 1\n")
+    monkeypatch.setenv("FLOCKWORK_LAND_GATE", "1")
+    monkeypatch.setenv("FLOCKWORK_LAND_SECRET", "extsecret")
+    out = m.work_external(o, "T", att, str(w), "w1", paths=["fix.py"],
+                          gate_token="owner:a:999999999999:deadbeef")
+    assert out["fixed"] is False
+    assert out["reason"] == "land_gate_denied"
+    assert out["verdict_pushed"] is False
+    assert f"refs/swarm/verdicts/T" not in _refs(o)
+    assert f"refs/swarm/claims/T" in _refs(o)
