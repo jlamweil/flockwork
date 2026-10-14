@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-14
 
 - **Harness auto-use layer**: drive the board from a coding agent instead of a
   headless worker. The **opencode plugin** (`.opencode/`, npm package

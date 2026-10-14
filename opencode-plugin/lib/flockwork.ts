@@ -22,7 +22,7 @@
 import { tool } from "@opencode-ai/plugin";
 import { z } from "zod";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 
 const TAG = "[flockwork]";
@@ -156,12 +156,46 @@ export const runFw = (
       // ENOENT (missing CLI) or ETIMEDOUT (oracle budget exceeded): the leg
       // could not run. Fail safe — a clean undefined the caller no-ops on.
       warn(`CLI could not run (${res.error.code ?? res.error.message}) — failing safe (no-op)`);
+      logDecision(directory, argv, undefined, res.error.code ?? res.error.message);
       return undefined;
     }
+    logDecision(directory, argv, res);
     return res;
   } catch (e) {
     warn(`internal error: ${e instanceof Error ? e.message : String(e)} — failing safe (no-op)`);
+    logDecision(directory, argv, undefined, e instanceof Error ? e.message : String(e));
     return undefined;
+  }
+};
+
+/** Local, human-legible engagement log (debuggability): one JSONL record per
+ *  substrate CLI call, so interactive fw_* decisions are inspectable in the
+ *  workspace without fetching git refs (mirrors zft's taskgate.jsonl). Written
+ *  under the board's .flockwork/ (present iff this is a live board). Fail-safe:
+ *  a logging failure must never break the tool or surface to the model. */
+export const logDecision = (
+  directory: string,
+  argv: string[],
+  res: SpawnSyncReturns<Buffer> | undefined,
+  err?: string,
+): void => {
+  try {
+    const dir = join(directory, ".flockwork");
+    if (!existsSync(dir)) return; // not a live board: nothing to log
+    const record = {
+      ts: new Date().toISOString(),
+      op: argv[0] ?? "",
+      argv,
+      origin: originOf(directory),
+      status: res?.status ?? null,
+      ok: res ? res.status === 0 : false,
+      error: err ?? null,
+      out_chars: res?.stdout ? String(res.stdout).length : 0,
+      err_chars: res?.stderr ? String(res.stderr).length : 0,
+    };
+    appendFileSync(join(dir, "decisions.jsonl"), `${JSON.stringify(record)}\n`);
+  } catch {
+    // best-effort logging: never break the tool over it
   }
 };
 
