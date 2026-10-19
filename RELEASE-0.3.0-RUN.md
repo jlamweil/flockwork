@@ -39,7 +39,12 @@ Ran 2026-10-19 by the orchestrator (TDD: metadata-gate tests written red-first i
   existing `.github/workflows/ci.yml` + `.gitlab-ci.yml` `pytest tests/` jobs already run.
 
 ## Remaining (owner-gated, NOT done here)
-- `twine upload` to PyPI requires an **upload-scoped** token + owner countersign
-  (ADR-0002). Version `0.3.0` is not yet on PyPI.
+- **PyPI publish blocked — token scope (confirmed live 2026-10-19).** `twine upload` of
+  `flockwork-0.3.0` returned **403 "Access was denied to this resource"** for project
+  `flockwork`. The current `~/.pypirc` token authenticates (`__token__` accepted) but is
+  **not an upload-scoped token** for the `flockwork` project. Package is **not** on PyPI.
+  *Fix (owner, on pypi.org):* Account settings → API tokens → create a project-scoped
+  token for `flockwork` with the **"Upload packages"** scope, then re-run
+  `TWINE_USERNAME=__token__ TWINE_PASSWORD=<token> python3 -m twine upload dist/*`.
 - npm `opencode-flockwork` publish — canonical plugin name (`flockwork-opencode` was a
   stale AGENTS.md label, never published; nothing to deprecate). Separate owner-gated step.
