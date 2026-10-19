@@ -1,5 +1,8 @@
 # flockwork — the swarm that runs like clockwork
 
+[![PyPI version](https://img.shields.io/pypi/v/flockwork.svg)](https://pypi.org/project/flockwork/)
+[![Python versions](https://img.shields.io/pypi/pyversions/flockwork.svg)](https://pypi.org/project/flockwork/)
+
 **flockwork** is a worker swarm whose **entire coordination substrate is
 git itself**: no server, no database, no queue daemon — a shared origin's
 refs under `refs/swarm/` carry task briefs, claims, returns, and
@@ -16,6 +19,18 @@ coordinate through refs on the project's own origin.
 
 Run it yourself in five minutes: `QUICKSTART.md` (scratch board, zero
 model spend).
+
+## Install
+
+```bash
+pip install flockwork            # from PyPI (Python >=3.10, zero runtime deps)
+```
+
+The installed `flockwork` console script is the same CLI as
+`python3 l2/inrepo.py`; see `docs/00-ORIENTATION.md` for how to point it
+at a board with `SWARM_ORIGIN`. Requires Python `>=3.10` and pulls **no
+third-party runtime dependencies** (all of `l2/` is stdlib-only), so it
+installs cleanly into any environment.
 
 ## The refs model (one diagram)
 
