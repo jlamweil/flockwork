@@ -33,4 +33,7 @@ Deployed globally so any opencode session can use flockwork:
 
 ## State / blockers
 - **No current blocker for use.** CLI + plugin + MCP + skill are live-verified on this box.
-- **Note:** standalone package *publish* to PyPI/npmjs was previously 403 (token scope). flockwork is consumed everywhere via the opencode plugin (no publish needed).
+- **Note:** standalone package *publish* to PyPI/npmjs was previously blocked by token
+  scope; fixed 2026-10-19 with owner upload-scoped tokens —
+  **`flockwork` v0.3.0 (PyPI) and `opencode-flockwork` v0.1.0 (npm) are live.** See
+  `RELEASE-0.3.0-RUN.md` + `PYPI_SETUP.md` for the headless token setup (no OTP).

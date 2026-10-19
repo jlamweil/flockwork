@@ -38,13 +38,28 @@ Ran 2026-10-19 by the orchestrator (TDD: metadata-gate tests written red-first i
 - Commit **D** (CI drift-guard) **satisfied by** the metadata-gate tests, which the
   existing `.github/workflows/ci.yml` + `.gitlab-ci.yml` `pytest tests/` jobs already run.
 
-## Remaining (owner-gated, NOT done here)
-- **PyPI publish blocked — token scope (confirmed live 2026-10-19).** `twine upload` of
-  `flockwork-0.3.0` returned **403 "Access was denied to this resource"** for project
-  `flockwork`. The current `~/.pypirc` token authenticates (`__token__` accepted) but is
-  **not an upload-scoped token** for the `flockwork` project. Package is **not** on PyPI.
-  *Fix (owner, on pypi.org):* Account settings → API tokens → create a project-scoped
-  token for `flockwork` with the **"Upload packages"** scope, then re-run
+## Publish — COMPLETED (2026-10-19, owner-supplied scoped tokens)
+- **PyPI `flockwork 0.3.0` — LIVE.** Root cause of the on/off 403 was a **stale
+  `~/.pypirc` token** (project-scoped to a different project — "project-scoped token is
+  not valid for project: 'flockwork'"). Replaced `~/.pypirc` `[pypi] password` with the
+  owner's `hq-flockwork` token (Project `flockwork`, **Upload packages**, 208-char
+  `pypi-…`) → `twine upload dist/*` returned rc 0 and
+  `View at: https://pypi.org/project/flockwork/0.3.0/`. Verified: direct JSON API shows
+  0.3.0; `pip install flockwork==0.3.0` (dedup) → `import l2.inrepo` OK.
+- **npm `opencode-flockwork@0.1.0` — LIVE.** After PyPI, published the plugin with a
+  Granular **whole-account** publish token stored in `opencode-plugin/.npmrc` (gitignored,
+  `//registry.npmjs.org/:_authToken=…`). `npm publish` → `latest: 0.1.0`; verified tarball
+  = real content (`index.ts`, `lib/flockwork.ts`, correct description; sha256 matches the
+  tree) and `npm install opencode-flockwork@latest` resolves to 0.1.0. A `0.0.0-stage`
+  `"stub": true` placeholder also sits on the registry (opencode name-reservation) — it is
+  **not** `latest` and is harmless; the real 0.1.0 is the resolved/fetched version. npm
+  **OTP was not needed** once the publish token replaced the interactive login.
+
+## Future / repeatable setup (token workflows, no OTP)
+- **PyPI:** keep an **upload-scoped** project token (`hq-flockwork` → project `flockwork`)
+  as the `password` in `~/.pypirc`; publish headless via
   `TWINE_USERNAME=__token__ TWINE_PASSWORD=<token> python3 -m twine upload dist/*`.
-- npm `opencode-flockwork` publish — canonical plugin name (`flockwork-opencode` was a
-  stale AGENTS.md label, never published; nothing to deprecate). Separate owner-gated step.
+- **npm:** keep a **Granular publish** token for `opencode-flockwork` (or whole-account)
+  in `opencode-plugin/.npmrc` (gitignored). `npm publish` runs with **no OTP prompt**;
+  a scoped/read-only token is the classic silent `403 You may not perform that action`.
+- Both tokens are **uncommitted/local** (`.pypirc` + `.npmrc` are gitignored) — no leaks.
