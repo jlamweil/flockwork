@@ -22,3 +22,6 @@ kept-attempts/
 .flockwork/
 # PyPI configuration (secure token storage)
 .pypirc
+
+# npm publish token (secure credential storage; keep local)
+opencode-plugin/.npmrc
