@@ -6,7 +6,7 @@
 A worker swarm whose **entire coordination substrate is git itself** — no server, no database, no queue daemon. A shared origin's refs under `refs/swarm/` carry task briefs, claims, returns, and verdicts; every guarantee (exactly-once work, honest outcomes, bounded retries) reduces to a git property verifiable with `ls-remote` and `cat-file`. This repo doubles as its own substrate (**D-INREPO**): the machinery lives in `l2/inrepo.py`, and workers coordinate through refs on the project's own origin.
 
 - **CLI:** `flockwork` (Python, entry `l2.inrepo:main`, v0.3.0, installed editable/pip + uv).
-- **opencode plugin:** `opencode-plugin/` (the `flockwork-opencode` npm package) — injects the flockwork protocol into the opencode system prompt and drives the claim/return loop.
+- **opencode plugin:** `opencode-plugin/` (the `opencode-flockwork` npm package) — injects the flockwork protocol into the opencode system prompt and drives the claim/return loop.
 - **MCP server:** `l2/mcp_server.py`. **Gates:** `l2/gates.py`.
 
 ## Zero-context orientation

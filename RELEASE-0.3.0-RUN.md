@@ -41,4 +41,5 @@ Ran 2026-10-19 by the orchestrator (TDD: metadata-gate tests written red-first i
 ## Remaining (owner-gated, NOT done here)
 - `twine upload` to PyPI requires an **upload-scoped** token + owner countersign
   (ADR-0002). Version `0.3.0` is not yet on PyPI.
-- npm `opencode-flockwork` publish + deprecate `flockwork-opencode` — separate step.
+- npm `opencode-flockwork` publish — canonical plugin name (`flockwork-opencode` was a
+  stale AGENTS.md label, never published; nothing to deprecate). Separate owner-gated step.

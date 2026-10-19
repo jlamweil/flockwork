@@ -186,8 +186,10 @@ build + CI.
 
 ## 9. Follow-ups (not part of this plan's core exec)
 
-- **npm `opencode-flockwork`** publish + deprecate the old `flockwork-opencode` name (npm
-  auth/OTP is independent; separate owner-gated step, noted here so it isn't lost).
+- **npm `opencode-flockwork`** publish (the plugin's canonical name — see `AGENTS.md`;
+  `flockwork-opencode` is not and was never published, so there is *nothing* to
+  deprecate; npm auth/OTP is independent, separate owner-gated step, noted here so it
+  isn't lost).
 - **Optional:** CI matrix for `3.8/3.9` only if `requires-python >=3.8` is actually
   desired — otherwise keep `>=3.10` and don't claim coverage we don't test.
 - Investigate the **historical 403 (token scope)** so the publish credential is confirmed
