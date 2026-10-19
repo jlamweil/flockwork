@@ -20,3 +20,5 @@ kept-attempts/
 # local harness marker (per-operator origin declaration, written by
 # `flockwork harness init`); the .opencode/ plugin is repo content and stays
 .flockwork/
+# PyPI configuration (secure token storage)
+.pypirc
