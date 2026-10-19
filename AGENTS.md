@@ -24,6 +24,12 @@ Deployed globally so any opencode session can use flockwork:
 - `~/.config/opencode/lib/flockwork.ts` — **a file copy** of `opencode-plugin/lib/flockwork.ts` (a **symlink breaks** opencode's plugin loader — keep it a real file).
 - `~/.config/opencode/plugins/flockwork.ts` — the loaded plugin (idempotency guard `globalThis.__flockworkRegistered`).
 
+**Sync / drift-guard:** `opencode-plugin/sync-global.sh` copies the repo lib into the
+global path as a **real file** (default) or verifies it with `--check` (0 = in sync, 1 =
+absent/symlink/drifted). `tests/test_plugin_global_sync.py` asserts no drift (skips where
+the global plugin isn't deployed, e.g. CI). After editing `opencode-plugin/lib/flockwork.ts`,
+run `opencode-plugin/sync-global.sh` (or rely on the pytest guard to flag it).
+
 **C10 (fixed 2026-10-11):** the protocol is injected by **mutating** `output.system` (`.push(proto)`), **not** re-assigning the reference — opencode reflects mutation of the same array, and re-assignment silently dropped the protocol from the live prompt (live-confirmed). See commit `11b5fad` + `flockwork.c10.test.ts` (asserts mutation on the original array ref; a re-assign regression now fails).
 
 ## Repo layout
