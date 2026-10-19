@@ -1,7 +1,9 @@
 # flockwork 0.3.0 — PyPI release: Implementation Plan
 
-**Status:** EXECUTED 2026-10-19 (impl commits landed via TDD; see
-`RELEASE-0.3.0-RUN.md` for the gate evidence + oracle corrections).
+**Status:** COMPLETE — EXECUTED 2026-10-19 via TDD (impl commits landed, all gates green,
+G1–G5), **published** to PyPI (`flockwork 0.3.0`) and npm (`opencode-flockwork 0.1.0`),
+`v0.3.0` tagged on the published tree. See `RELEASE-0.3.0-RUN.md` for the gate evidence +
+oracle corrections + publish record.
 **Date:** 2026-10-19
 **Owner:** orchestrator
 **Target:** finish and publish the `flockwork` Python package as **0.3.0** on PyPI,
@@ -186,14 +188,15 @@ build + CI.
 
 ## 9. Follow-ups (not part of this plan's core exec)
 
-- **npm `opencode-flockwork`** publish (the plugin's canonical name — see `AGENTS.md`;
-  `flockwork-opencode` is not and was never published, so there is *nothing* to
-  deprecate; npm auth/OTP is independent, separate owner-gated step, noted here so it
-  isn't lost).
+- **npm `opencode-flockwork` publish** — **DONE 2026-10-19**: `opencode-flockwork@0.1.0`
+  published (credential = Granular **publish** token in `opencode-plugin/.npmrc`, gitignored;
+  no OTP). `flockwork-opencode` was never published → nothing to deprecate.
 - **Optional:** CI matrix for `3.8/3.9` only if `requires-python >=3.8` is actually
   desired — otherwise keep `>=3.10` and don't claim coverage we don't test.
-- Investigate the **historical 403 (token scope)** so the publish credential is confirmed
-  to have `upload` permission *before* the owner countersigns (fail earlier than upload).
+- **Historical 403 (token scope)** — **RESOLVED 2026-10-19**: the live 403s were
+  (a) `${PYPI_API_TOKEN}` in `.pypirc` not shell-expanded by twine, and (b) a project-scoped
+  token for a *different* project ("not valid for project: 'flockwork'"). Fixed with an
+  upload-scoped `hq-flockwork` token → upload passed. Documented in `PYPI_SETUP.md`.
 
 ---
 
@@ -213,11 +216,17 @@ build + CI.
 
 ## 11. Definition of done
 
-- [ ] `pyproject.toml` is the single packaging source of truth with truthful metadata.
-- [ ] No `example.com`, no phantom deps anywhere in shipped metadata.
-- [ ] G1–G5 all green on the final tree (build, byte-repro wheel, clean-venv CLI+scratch
+- [x] `pyproject.toml` is the single packaging source of truth with truthful metadata.
+- [x] No `example.com`, no phantom deps anywhere in shipped metadata.
+- [x] G1–G5 all green on the final tree (build, byte-repro wheel, clean-venv CLI+scratch
   round-trip, metadata audit, CI/lint parity).
-- [ ] Four atomic commits (A–D) landed, each green; `git status` clean.
-- [ ] `flockwork 0.3.0` published to PyPI on the tagged, owner-countersigned tree.
-- [ ] `pip install flockwork==0.3.0` + `flockwork --help` verified in a fresh venv.
-- [ ] npm follow-up (§9) tracked, not silently dropped.
+- [x] Atomic commits (A, B, and D) landed, each green; commit C omitted (`dist/` is
+  gitignored — build products are never committed); `git status` clean (only untracked
+  `.zft/` runtime store, intentionally unpushed).
+- [x] `flockwork 0.3.0` published to PyPI **and** the `v0.3.0` tag moved to the published
+  tree on origin/github/gitlab (`3ff5961` → commit `2faa024`; owner-supplied upload token).
+- [x] `pip install flockwork==0.3.0` verified in a fresh venv. (*Oracle correction:
+  `flockwork --help` is not a valid verb — it exits rc 2 — so the smoke is `import
+  l2.inrepo` + a real scratch-board round-trip, per §6 G3.*)
+- [x] npm follow-up (§9) **done**: `opencode-flockwork@0.1.0` published (Granular publish
+  token, no OTP; stub `0.0.0-stage` is a harmless name-reservation, `latest` = 0.1.0).
